@@ -51,6 +51,8 @@ interface ServerConfig {
   ciParity: boolean
   scanOnOpen: boolean
   astCheckerPath: string
+  goCheckerPath: string
+  tsCheckerPath: string
 }
 
 // --- Server setup ---
@@ -77,6 +79,8 @@ let config: ServerConfig = {
   ciParity: true,
   scanOnOpen: true,
   astCheckerPath: '',
+  goCheckerPath: '',
+  tsCheckerPath: '',
 }
 
 let workspaceRoot = ''
@@ -88,22 +92,23 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
     ? URI.parse(params.rootUri).fsPath
     : params.rootPath ?? ''
 
-  // Locate ast_checks.py:
-  // 1. Production (installed .vsix): language-packs/ is copied into the extension root at package time
+  // Locate language-packs/ root:
+  // 1. Production (.vsix): language-packs/ is inside the extension root
   // 2. Dev (F5): extensionPath is packages/vscode/, language-packs/ is at repo root (../../)
   const extensionPath = params.initializationOptions?.extensionPath ?? ''
-  const prodPath = extensionPath
-    ? path.join(extensionPath, 'language-packs', 'python', 'scripts', 'ast_checks.py')
-    : ''
-  const devPath = extensionPath
-    ? path.join(extensionPath, '..', '..', 'language-packs', 'python', 'scripts', 'ast_checks.py')
-    : path.join(__dirname, '..', '..', '..', 'language-packs', 'python', 'scripts', 'ast_checks.py')
+  const prodLP = extensionPath ? path.join(extensionPath, 'language-packs') : ''
+  const devLP = extensionPath
+    ? path.join(extensionPath, '..', '..', 'language-packs')
+    : path.join(__dirname, '..', '..', '..', 'language-packs')
+  const languagePacksRoot = (prodLP && fs.existsSync(prodLP)) ? prodLP : devLP
 
-  config.astCheckerPath = (prodPath && fs.existsSync(prodPath)) ? prodPath : devPath
+  config.astCheckerPath = path.join(languagePacksRoot, 'python', 'scripts', 'ast_checks.py')
+  config.goCheckerPath = path.join(languagePacksRoot, 'go', 'scripts', 'ast_checks')
+  config.tsCheckerPath = path.join(languagePacksRoot, 'typescript', 'scripts', 'ast_checks.js')
 
   connection.console.log(`Anti-Pattern LSP server started`)
   connection.console.log(`Workspace: ${workspaceRoot}`)
-  connection.console.log(`AST checker: ${config.astCheckerPath}`)
+  connection.console.log(`Language packs: ${languagePacksRoot}`)
 
   return {
     capabilities: {
@@ -253,69 +258,122 @@ function runAnalysis(
   outputPath: string
 ): Promise<Finding[]> {
   return new Promise((resolve, reject) => {
-    if (lang === 'python') {
-      runPythonAnalysis(fsPath, outputPath, resolve, reject)
-    } else {
-      // Future: route to TypeScript/JS analysis
-      resolve([])
+    switch (lang) {
+      case 'python':
+        runSidecarAnalysis(config.astCheckerPath, config.pythonPath, fsPath, outputPath, resolve, reject)
+        break
+      case 'go':
+        runBinaryAnalysis(config.goCheckerPath, fsPath, outputPath, resolve, reject)
+        break
+      case 'typescript':
+      case 'javascript':
+        runNodeAnalysis(config.tsCheckerPath, fsPath, outputPath, resolve, reject)
+        break
+      default:
+        resolve([])
     }
   })
 }
 
-function runPythonAnalysis(
+// Shared output parser for all sidecar processes
+function handleCheckerOutput(
+  fsPath: string,
+  outputPath: string,
+  resolve: (f: Finding[]) => void,
+  reject: (e: Error) => void,
+  code: number | null,
+  signal: string | null,
+  stderr: string
+): void {
+  if (signal === 'SIGTERM') {
+    connection.console.warn(`Checker timed out after 30s for ${fsPath}`)
+    resolve([])
+    return
+  }
+  if (code !== 0 && code !== null) {
+    connection.console.warn(`Checker exited ${code}: ${stderr}`)
+  }
+  try {
+    if (!fs.existsSync(outputPath)) {
+      resolve([])
+      return
+    }
+    const raw = JSON.parse(fs.readFileSync(outputPath, 'utf-8'))
+    const findings: Finding[] = (raw.findings ?? [])
+      .filter((f: Finding) => meetsThreshold(f))
+    resolve(findings)
+  } catch (e: any) {
+    reject(new Error(`Failed to parse checker output: ${e.message}`))
+  }
+}
+
+// Python: spawn interpreter with script path
+function runSidecarAnalysis(
+  checkerPath: string,
+  interpreter: string,
   fsPath: string,
   outputPath: string,
   resolve: (f: Finding[]) => void,
   reject: (e: Error) => void
 ): void {
-  if (!fs.existsSync(config.astCheckerPath)) {
-    reject(new Error(`AST checker not found at: ${config.astCheckerPath}`))
+  if (!fs.existsSync(checkerPath)) {
+    connection.console.warn(`Python AST checker not found: ${checkerPath}`)
+    resolve([])
     return
   }
+  const args = [checkerPath, path.dirname(fsPath), '--output', outputPath, '--single-file', fsPath]
+  if (config.ignorePaths.length > 0) args.push('--ignore', config.ignorePaths.join(','))
 
-  const args = [
-    config.astCheckerPath,
-    path.dirname(fsPath),       // scan the directory containing the file
-    '--output', outputPath,
-    '--single-file', fsPath,    // tell checker to only process this one file
-  ]
-  if (config.ignorePaths.length > 0) {
-    args.push('--ignore', config.ignorePaths.join(','))
-  }
-
-  const proc = cp.spawn(config.pythonPath, args, {
-    cwd: workspaceRoot,
-    timeout: 30_000,            // 30s hard timeout per file
-  })
-
+  const proc = cp.spawn(interpreter, args, { cwd: workspaceRoot, timeout: 30_000 })
   let stderr = ''
   proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+  proc.on('close', (code, signal) => handleCheckerOutput(fsPath, outputPath, resolve, reject, code, signal, stderr))
+  proc.on('error', (e) => reject(e))
+}
 
-  proc.on('close', (code, signal) => {
-    if (signal === 'SIGTERM') {
-      connection.console.warn(`AST checker timed out after 30s for ${fsPath}`)
-      resolve([])
-      return
-    }
-    if (code !== 0 && code !== null) {
-      connection.console.warn(`AST checker exited ${code}: ${stderr}`)
-    }
+// Go: compiled binary, run directly
+function runBinaryAnalysis(
+  binaryPath: string,
+  fsPath: string,
+  outputPath: string,
+  resolve: (f: Finding[]) => void,
+  reject: (e: Error) => void
+): void {
+  if (!fs.existsSync(binaryPath)) {
+    connection.console.warn(`Go AST checker binary not found: ${binaryPath}`)
+    resolve([])
+    return
+  }
+  const args = [path.dirname(fsPath), '--output', outputPath]
+  if (config.ignorePaths.length > 0) args.push('--ignore', config.ignorePaths.join(','))
 
-    try {
-      if (!fs.existsSync(outputPath)) {
-        resolve([])
-        return
-      }
-      const raw = JSON.parse(fs.readFileSync(outputPath, 'utf-8'))
-      const findings: Finding[] = (raw.findings ?? [])
-        .filter((f: Finding) => meetsThreshold(f))
+  const proc = cp.spawn(binaryPath, args, { cwd: workspaceRoot, timeout: 30_000 })
+  let stderr = ''
+  proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+  proc.on('close', (code, signal) => handleCheckerOutput(fsPath, outputPath, resolve, reject, code, signal, stderr))
+  proc.on('error', (e) => reject(e))
+}
 
-      resolve(findings)
-    } catch (e: any) {
-      reject(new Error(`Failed to parse AST output: ${e.message}`))
-    }
-  })
+// TypeScript/JS: run with node
+function runNodeAnalysis(
+  scriptPath: string,
+  fsPath: string,
+  outputPath: string,
+  resolve: (f: Finding[]) => void,
+  reject: (e: Error) => void
+): void {
+  if (!fs.existsSync(scriptPath)) {
+    connection.console.warn(`TS AST checker not found: ${scriptPath}`)
+    resolve([])
+    return
+  }
+  const args = [scriptPath, path.dirname(fsPath), '--output', outputPath]
+  if (config.ignorePaths.length > 0) args.push('--ignore', config.ignorePaths.join(','))
 
+  const proc = cp.spawn('node', args, { cwd: workspaceRoot, timeout: 30_000 })
+  let stderr = ''
+  proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+  proc.on('close', (code, signal) => handleCheckerOutput(fsPath, outputPath, resolve, reject, code, signal, stderr))
   proc.on('error', (e) => reject(e))
 }
 
@@ -517,6 +575,7 @@ function languageFromPath(fsPath: string): string | null {
   if (['.py', '.pyw', '.pyi'].includes(ext)) return 'python'
   if (['.ts', '.tsx'].includes(ext)) return 'typescript'
   if (['.js', '.jsx', '.mjs'].includes(ext)) return 'javascript'
+  if (ext === '.go') return 'go'
   return null
 }
 

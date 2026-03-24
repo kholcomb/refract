@@ -48,10 +48,11 @@ export async function activate(context: vscode.ExtensionContext) {
       { scheme: 'file', language: 'python' },
       { scheme: 'file', language: 'typescript' },
       { scheme: 'file', language: 'javascript' },
+      { scheme: 'file', language: 'go' },
     ],
     synchronize: {
       configurationSection: 'antipattern',
-      fileEvents: vscode.workspace.createFileSystemWatcher('**/*.py'),
+      fileEvents: vscode.workspace.createFileSystemWatcher('**/*.{py,ts,js,go}'),
     },
     initializationOptions: {
       extensionPath: context.extensionPath,
