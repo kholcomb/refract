@@ -61,4 +61,16 @@ class MegaController {
 // ── Hardcoded secret ─────────────────────────────────────────────────────────
 const API_KEY = "sk-1234567890abcdef1234567890abcdef"    // antipattern: hardcoded_secret (gitleaks)
 
-export { processOrders, calculateDiscount, MegaController, API_KEY }
+// ── eval() usage ─────────────────────────────────────────────────────────────
+// antipattern: eval_usage — intentional fixture for testing
+const result = eval("1 + 2")
+
+// ── innerHTML assignment ─────────────────────────────────────────────────────
+declare const element: HTMLElement
+declare const userInput: string
+element.innerHTML = userInput             // antipattern: innerhtml_assignment
+
+// ── Promise without catch ────────────────────────────────────────────────────
+fetch('/api').then(r => r.json())         // antipattern: promise_no_catch
+
+export { processOrders, calculateDiscount, MegaController, API_KEY, result }

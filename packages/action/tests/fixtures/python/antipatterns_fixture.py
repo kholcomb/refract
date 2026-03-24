@@ -145,3 +145,65 @@ def load_session(data):
 # ── Shell injection vector ───────────────────────────────────────────────────
 def run_report(report_name):
     subprocess.call(f"generate_report {report_name}", shell=True)  # antipattern: shell_injection (bandit B602)
+
+
+# ── datetime.now() without timezone ─────────────────────────────────────────
+from datetime import datetime
+
+def get_current_time():
+    return datetime.now()  # antipattern: datetime_now_naive
+
+
+# ── String-formatted SQL ────────────────────────────────────────────────────
+def fetch_user(cursor, user_id):
+    cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")  # antipattern: string_format_sql
+
+
+# ── Long isinstance chain ───────────────────────────────────────────────────
+class Animal:
+    pass
+
+class Dog(Animal):
+    pass
+
+class Cat(Animal):
+    pass
+
+class Bird(Animal):
+    pass
+
+class Fish(Animal):
+    pass
+
+def describe_animal(animal):
+    if isinstance(animal, Dog):          # antipattern: isinstance_chain (4+ branches)
+        return "dog"
+    elif isinstance(animal, Cat):
+        return "cat"
+    elif isinstance(animal, Bird):
+        return "bird"
+    elif isinstance(animal, Fish):
+        return "fish"
+    else:
+        return "unknown"
+
+
+# ── eval() usage ────────────────────────────────────────────────────────────
+def dynamic_compute(expression):
+    # antipattern: eval_usage — intentional fixture for testing
+    return eval(expression)
+
+
+# ── yaml.load() without SafeLoader ─────────────────────────────────────────
+import yaml
+
+def load_config(data):
+    return yaml.load(data)  # antipattern: yaml_unsafe_load
+
+
+# ── open() without with statement ───────────────────────────────────────────
+def read_raw(path):
+    f = open(path, 'r')  # antipattern: file_not_closed
+    content = f.read()
+    f.close()
+    return content
