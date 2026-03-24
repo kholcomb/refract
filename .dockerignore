@@ -1,0 +1,10 @@
+node_modules/
+src/
+tests/
+coverage/
+.git/
+.github/
+*.md
+.DS_Store
+tsconfig.json
+jest.config.js

@@ -1,0 +1,27 @@
+# TypeScript/JavaScript language pack thresholds
+# Override these values in your workflow inputs or by placing a
+# .antipattern-thresholds.yml in your repository root.
+
+code_structure:
+  # Maximum cyclomatic complexity before flagging
+  max_cyclomatic_complexity: 10
+
+  # Maximum function length (lines) before flagging
+  max_function_length: 50
+
+  # Maximum nesting depth before flagging
+  max_nesting_depth: 4
+
+  # Minimum methods to flag a class as god class
+  god_class_method_count: 15
+
+  # Lizard-based god class thresholds (file-level)
+  god_class_lizard_method_count: 20
+  god_class_lizard_total_lines: 500
+
+  # Magic number detection: values to ignore (always allowed)
+  magic_number_allowed: [0, 1, -1, 2, 100]
+
+test_quality:
+  # Maximum jest.mock() calls before flagging excessive mocking
+  max_mock_calls: 5
