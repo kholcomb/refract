@@ -35292,6 +35292,7 @@ const fs = __importStar(__nccwpck_require__(9896));
 const language_detector_1 = __nccwpck_require__(2778);
 const python_1 = __nccwpck_require__(5373);
 const typescript_1 = __nccwpck_require__(6752);
+const go_1 = __nccwpck_require__(2065);
 const outputter_1 = __nccwpck_require__(8525);
 const core_1 = __nccwpck_require__(5026);
 Object.defineProperty(exports, "SEVERITY_ORDER", ({ enumerable: true, get: function () { return core_1.SEVERITY_ORDER; } }));
@@ -35356,6 +35357,10 @@ async function run() {
                     case 'javascript':
                         allFindings.push(...await (0, typescript_1.scanTypeScript)(scanOptions));
                         packsUsed.push('typescript_v1');
+                        break;
+                    case 'go':
+                        allFindings.push(...await (0, go_1.scanGo)(scanOptions));
+                        packsUsed.push('go_v1');
                         break;
                     default:
                         core.info(`  [i]  No pack available for '${lang}', skipping`);
@@ -35518,7 +35523,7 @@ const EXTENSION_MAP = {
     '.swift': 'swift',
     '.kt': 'kotlin',
 };
-const AVAILABLE_PACKS = new Set(['python', 'typescript', 'javascript']);
+const AVAILABLE_PACKS = new Set(['python', 'typescript', 'javascript', 'go']);
 const SKIP_DIRS = new Set([
     'node_modules', '.git', '.venv', 'venv', 'env', '__pycache__',
     'dist', 'build', '.tox', '.mypy_cache', '.next', 'coverage',
@@ -35563,6 +35568,325 @@ async function detectLanguages(rootPath, ignorePaths) {
     }));
 }
 //# sourceMappingURL=language-detector.js.map
+
+/***/ }),
+
+/***/ 2065:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+// Note: This module uses @actions/exec which calls child_process.execFile()
+// internally with argument arrays -- no shell interpretation, no injection risk.
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.scanGo = scanGo;
+const core = __importStar(__nccwpck_require__(7184));
+const exec = __importStar(__nccwpck_require__(9192));
+const fs = __importStar(__nccwpck_require__(9896));
+const path = __importStar(__nccwpck_require__(6928));
+const core_1 = __nccwpck_require__(5026);
+const shared_scanners_1 = __nccwpck_require__(7010);
+const PACK_VERSION = 'go_v1';
+async function scanGo(options) {
+    const findings = [];
+    core.info('[go] Running Go language pack...');
+    if (options.categories.includes('code_structure')) {
+        findings.push(...await runStructureChecks(options));
+    }
+    if (options.categories.includes('security')) {
+        findings.push(...await runSecurityChecks(options));
+    }
+    if (options.categories.includes('dependencies')) {
+        findings.push(...await runDependencyChecks(options));
+    }
+    if (options.categories.includes('test_quality')) {
+        findings.push(...await runTestQualityChecks(options));
+    }
+    return findings.filter(f => f.confidence >= options.confidenceThreshold);
+}
+// --- CODE STRUCTURE ---
+async function runStructureChecks(options) {
+    const findings = [];
+    core.info('  -> Code structure checks (AST analysis, complexity...)');
+    // Custom AST-based checks via compiled Go binary
+    const astBinaryPath = path.join((0, core_1.getActionRoot)(), 'language-packs/go/scripts/ast_checks');
+    const astScriptPath = path.join((0, core_1.getActionRoot)(), 'language-packs/go/scripts/ast_checks.go');
+    const outputPath = '/tmp/go_ast_findings.json';
+    // Prefer compiled binary, fall back to go run
+    let astCmd;
+    let astArgs;
+    if (fs.existsSync(astBinaryPath)) {
+        astCmd = astBinaryPath;
+        astArgs = [options.workspacePath, '--output', outputPath,
+            '--ignore', options.ignorePaths.join(',')];
+    }
+    else if (fs.existsSync(astScriptPath)) {
+        astCmd = 'go';
+        astArgs = ['run', astScriptPath, options.workspacePath,
+            '--output', outputPath,
+            '--ignore', options.ignorePaths.join(',')];
+    }
+    else {
+        core.warning('Go AST checker not found, skipping structure checks');
+        return findings;
+    }
+    await runCommand(astCmd, astArgs, { ignoreReturnCode: true });
+    if (fs.existsSync(outputPath)) {
+        const data = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
+        findings.push(...data.findings ?? []);
+    }
+    // Lizard for complexity (supports Go)
+    await runCommand('lizard', [options.workspacePath, '--output-file', '/tmp/lizard_go_output.json',
+        '--json', '-l', 'golang', '--length', '50', '--CCN', '10'], { ignoreReturnCode: true });
+    if (fs.existsSync('/tmp/lizard_go_output.json')) {
+        const data = JSON.parse(fs.readFileSync('/tmp/lizard_go_output.json', 'utf-8'));
+        findings.push(...parseLizardOutput(data, options.workspacePath));
+    }
+    return findings;
+}
+function parseLizardOutput(data, workspacePath) {
+    const findings = [];
+    const now = new Date().toISOString();
+    for (const file of data?.function_list ?? []) {
+        const relPath = path.relative(workspacePath, file.filename);
+        if (file.length > 50) {
+            findings.push({
+                id: generateId(),
+                antipattern: 'long_method',
+                antipattern_name: 'Long Function',
+                category: 'code_structure',
+                severity: file.length > 150 ? 'high' : 'medium',
+                confidence: 0.95,
+                file: relPath,
+                line_start: file.start_line,
+                line_end: file.end_line,
+                language: 'go',
+                language_pack: PACK_VERSION,
+                message: `Function '${file.name}' is ${file.length} lines long (threshold: 50)`,
+                remediation: `Break '${file.name}' into smaller functions with single responsibilities.`,
+                effort: file.length > 150 ? 'days' : 'hours',
+                tool: 'lizard',
+                rule_id: 'go/long-function',
+                tags: ['maintainability'],
+                detected_at: now,
+            });
+        }
+        if (file.cyclomatic_complexity > 10) {
+            findings.push({
+                id: generateId(),
+                antipattern: 'high_cyclomatic_complexity',
+                antipattern_name: 'High Cyclomatic Complexity',
+                category: 'code_structure',
+                severity: file.cyclomatic_complexity > 20 ? 'high' : 'medium',
+                confidence: 1.0,
+                file: relPath,
+                line_start: file.start_line,
+                line_end: file.end_line,
+                language: 'go',
+                language_pack: PACK_VERSION,
+                message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: 10)`,
+                remediation: `Reduce branching with early returns, table-driven logic, or extracted helper functions.`,
+                effort: 'hours',
+                tool: 'lizard',
+                rule_id: 'go/high-complexity',
+                tags: ['maintainability', 'testability'],
+                detected_at: now,
+            });
+        }
+    }
+    return findings;
+}
+// --- SECURITY ---
+async function runSecurityChecks(options) {
+    const findings = [];
+    core.info('  -> Security checks (gosec, gitleaks...)');
+    // gitleaks (shared single-pass)
+    const goExtensions = new Set(['.go']);
+    findings.push(...await (0, shared_scanners_1.runGitleaks)(options.workspacePath, PACK_VERSION, 'go', goExtensions));
+    // gosec (Apache 2.0)
+    const gosecOutput = await runCommand('gosec', ['-fmt', 'json', '-out', '/tmp/gosec.json', '-severity', 'medium', '-quiet', './...'], { ignoreReturnCode: true, cwd: options.workspacePath });
+    if (fs.existsSync('/tmp/gosec.json')) {
+        try {
+            const data = JSON.parse(fs.readFileSync('/tmp/gosec.json', 'utf-8'));
+            findings.push(...parseGosecOutput(data, options.workspacePath));
+        }
+        catch {
+            core.warning('Failed to parse gosec output');
+        }
+    }
+    return findings;
+}
+function parseGosecOutput(data, workspacePath) {
+    const findings = [];
+    const now = new Date().toISOString();
+    const severityMap = {
+        HIGH: 'high', MEDIUM: 'medium', LOW: 'low',
+    };
+    for (const issue of data?.Issues ?? []) {
+        findings.push({
+            id: generateId(),
+            antipattern: mapGosecRule(issue.rule_id),
+            antipattern_name: issue.details ?? issue.rule_id,
+            category: 'security',
+            severity: severityMap[issue.severity] ?? 'medium',
+            confidence: issue.confidence === 'HIGH' ? 0.9
+                : issue.confidence === 'MEDIUM' ? 0.7 : 0.5,
+            file: path.relative(workspacePath, issue.file),
+            line_start: parseInt(issue.line, 10) || 1,
+            line_end: parseInt(issue.line, 10) || 1,
+            language: 'go',
+            language_pack: PACK_VERSION,
+            message: issue.details,
+            remediation: buildGosecRemediation(issue.rule_id),
+            effort: 'hours',
+            tool: 'gosec',
+            rule_id: `gosec/${issue.rule_id}`,
+            code_snippet: issue.code,
+            references: issue.cwe?.url ? [issue.cwe.url] : [],
+            tags: ['security'],
+            detected_at: now,
+        });
+    }
+    return findings;
+}
+function mapGosecRule(ruleId) {
+    const map = {
+        'G101': 'hardcoded_secret',
+        'G201': 'sql_injection_vector',
+        'G202': 'sql_injection_vector',
+        'G203': 'shell_injection_vector',
+        'G204': 'shell_injection_vector',
+        'G301': 'path_traversal',
+        'G302': 'path_traversal',
+        'G304': 'path_traversal',
+        'G401': 'weak_cryptography',
+        'G501': 'weak_cryptography',
+    };
+    return map[ruleId] ?? 'security_issue';
+}
+function buildGosecRemediation(ruleId) {
+    const map = {
+        'G101': 'Remove hardcoded credentials. Use environment variables or a secrets manager.',
+        'G201': 'Use parameterized queries instead of string concatenation.',
+        'G204': 'Avoid exec.Command with user input. Validate and sanitize arguments.',
+        'G304': 'Validate file paths against a whitelist. Use filepath.Clean().',
+        'G401': 'Use modern cryptographic algorithms (SHA-256+, AES-256).',
+    };
+    return map[ruleId] ?? 'Review this security finding and apply the principle of least privilege.';
+}
+// --- DEPENDENCIES ---
+async function runDependencyChecks(options) {
+    const findings = [];
+    const now = new Date().toISOString();
+    core.info('  -> Dependency checks (govulncheck, osv-scanner...)');
+    // govulncheck (BSD) -- Go's official vuln scanner
+    const goModPath = path.join(options.workspacePath, 'go.mod');
+    if (fs.existsSync(goModPath)) {
+        const vulnOutput = await runCommand('govulncheck', ['-json', './...'], { ignoreReturnCode: true, cwd: options.workspacePath });
+        if (vulnOutput.stdout) {
+            try {
+                for (const line of vulnOutput.stdout.split('\n')) {
+                    if (!line.trim())
+                        continue;
+                    const msg = JSON.parse(line);
+                    if (msg.vulnerability) {
+                        const vuln = msg.vulnerability;
+                        findings.push({
+                            id: generateId(),
+                            antipattern: 'vulnerable_dependency',
+                            antipattern_name: 'Vulnerable Dependency',
+                            category: 'dependencies',
+                            severity: vulnSeverity(vuln),
+                            confidence: 1.0,
+                            file: 'go.mod',
+                            line_start: 1,
+                            line_end: 1,
+                            language: 'go',
+                            language_pack: PACK_VERSION,
+                            message: `${vuln.osv?.id}: ${vuln.osv?.summary ?? 'Known vulnerability'}`,
+                            remediation: `Update the affected module. Run: go get -u <module>@latest`,
+                            effort: 'hours',
+                            tool: 'govulncheck',
+                            rule_id: `govulncheck/${vuln.osv?.id ?? 'unknown'}`,
+                            references: vuln.osv?.references?.map((r) => r.url) ?? [],
+                            tags: ['security', 'dependencies'],
+                            detected_at: now,
+                        });
+                    }
+                }
+            }
+            catch {
+                core.warning('Failed to parse govulncheck output');
+            }
+        }
+    }
+    return findings;
+}
+function vulnSeverity(vuln) {
+    const summary = (vuln.osv?.summary ?? '').toLowerCase();
+    if (summary.includes('remote code') || summary.includes('rce'))
+        return 'critical';
+    if (summary.includes('denial') || summary.includes('overflow'))
+        return 'high';
+    return 'medium';
+}
+// --- TEST QUALITY ---
+async function runTestQualityChecks(_options) {
+    core.info('  -> Test quality checks (coverage...)');
+    return [];
+}
+// --- UTILITIES ---
+async function runCommand(cmd, args, options = {}) {
+    let stdout = '';
+    let stderr = '';
+    const exitCode = await exec.exec(cmd, args, {
+        ignoreReturnCode: options.ignoreReturnCode ?? false,
+        silent: options.silent ?? true,
+        cwd: options.cwd,
+        listeners: {
+            stdout: (data) => { stdout += data.toString(); },
+            stderr: (data) => { stderr += data.toString(); },
+        },
+    }).catch(() => -1);
+    return { stdout, stderr, exitCode };
+}
+function generateId() {
+    return Math.random().toString(36).substring(2, 11);
+}
+//# sourceMappingURL=go.js.map
 
 /***/ }),
 

@@ -8,7 +8,7 @@
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type EffortEstimate = 'minutes' | 'hours' | 'days' | 'weeks';
 export type AntipatternCategory = 'code_structure' | 'security' | 'dependencies' | 'test_quality' | 'concurrency' | 'api_design' | 'documentation';
-export type AntipatternId = 'god_class' | 'long_method' | 'high_cyclomatic_complexity' | 'duplicate_code' | 'dead_code' | 'feature_envy' | 'data_clump' | 'primitive_obsession' | 'deep_nesting' | 'magic_number' | 'magic_string' | 'hardcoded_secret' | 'sql_injection_vector' | 'shell_injection_vector' | 'insecure_deserialization' | 'weak_cryptography' | 'error_info_exposure' | 'path_traversal' | 'open_redirect' | 'vulnerable_dependency' | 'outdated_dependency' | 'unused_dependency' | 'dependency_bloat' | 'missing_test_coverage' | 'test_interdependence' | 'excessive_mocking' | 'assertion_roulette' | 'mystery_guest' | 'mutable_default_argument' | 'bare_except' | 'exception_sink' | 'implicit_string_concat' | 'wildcard_import' | 'circular_import' | 'n_plus_one_query' | 'any_type_abuse' | 'ts_ignore_proliferation' | 'callback_hell' | 'error_not_checked' | 'bare_goroutine' | 'empty_interface_abuse' | 'context_not_first_param' | 'large_interface' | 'init_side_effects' | string;
+export type AntipatternId = 'god_class' | 'long_method' | 'high_cyclomatic_complexity' | 'duplicate_code' | 'dead_code' | 'feature_envy' | 'data_clump' | 'primitive_obsession' | 'deep_nesting' | 'magic_number' | 'magic_string' | 'hardcoded_secret' | 'sql_injection_vector' | 'shell_injection_vector' | 'insecure_deserialization' | 'weak_cryptography' | 'error_info_exposure' | 'path_traversal' | 'open_redirect' | 'vulnerable_dependency' | 'outdated_dependency' | 'unused_dependency' | 'dependency_bloat' | 'missing_test_coverage' | 'test_interdependence' | 'excessive_mocking' | 'assertion_roulette' | 'mystery_guest' | 'mutable_default_argument' | 'bare_except' | 'exception_sink' | 'implicit_string_concat' | 'wildcard_import' | 'circular_import' | 'n_plus_one_query' | 'any_type_abuse' | 'ts_ignore_proliferation' | 'callback_hell' | string;
 export interface Finding {
     /** Unique identifier for this specific finding instance */
     id: string;
@@ -96,4 +96,3 @@ export interface ScanSummary {
     by_language: Record<string, number>;
     files_affected: number;
 }
-//# sourceMappingURL=types.d.ts.map
