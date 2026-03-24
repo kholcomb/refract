@@ -74,6 +74,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
     # --- Mutable default arguments ---
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self._check_mutable_defaults(node)
+        self._check_test_no_assertion(node)
         # Nesting: only check if no nested function already reported for this scope
         if not self._has_nested_nesting_report(node):
             self._check_function_nesting(node)
@@ -618,6 +619,12 @@ class AntiPatternVisitor(ast.NodeVisitor):
 
     # --- datetime.now() without timezone ---
     def visit_Call(self, node: ast.Call):
+        # Check for eval/exec usage
+        self._check_eval_usage(node)
+        # Check for yaml.load() without SafeLoader
+        self._check_yaml_unsafe_load(node)
+        # Check for open() outside with statement
+        self._check_file_not_closed(node)
         # Check for datetime.now() or datetime.datetime.now() without tz arg
         if self._is_datetime_now_naive(node):
             pos = node.lineno
@@ -762,6 +769,150 @@ class AntiPatternVisitor(ast.NodeVisitor):
             if isinstance(test.func, ast.Name) and test.func.id == 'isinstance':
                 return True
         return False
+
+    # --- eval/exec usage ---
+    def _check_eval_usage(self, node: ast.Call):
+        """Detect eval() and exec() calls."""
+        if isinstance(node.func, ast.Name) and node.func.id in ('eval', 'exec'):
+            func_name = node.func.id
+            self.findings.append(Finding(
+                id=make_id(),
+                antipattern='eval_usage',
+                antipattern_name='eval/exec Usage',
+                category='security',
+                severity='critical',
+                confidence=1.0,
+                file=self.filepath,
+                line_start=node.lineno,
+                line_end=node.lineno,
+                language='python',
+                language_pack=PACK_VERSION,
+                message=f"`{func_name}()` runs arbitrary code. This is a critical security risk if the input is user-controlled.",
+                remediation=f"Remove `{func_name}()` and use safer alternatives: ast.literal_eval() for data parsing, or a dispatch dict for dynamic behavior.",
+                effort='hours',
+                tool='ast-checker',
+                rule_id='python/eval-usage',
+                code_snippet=self._snippet(node),
+                references=['https://bandit.readthedocs.io/en/latest/plugins/b307_eval.html'],
+                tags=['security', 'injection'],
+            ))
+
+    # --- yaml.load() without SafeLoader ---
+    def _check_yaml_unsafe_load(self, node: ast.Call):
+        """Detect yaml.load() without Loader=SafeLoader or Loader=yaml.SafeLoader."""
+        if not isinstance(node.func, ast.Attribute):
+            return
+        if node.func.attr != 'load':
+            return
+        # Check receiver is 'yaml'
+        if not (isinstance(node.func.value, ast.Name) and node.func.value.id == 'yaml'):
+            return
+        # Check for Loader keyword argument
+        for kw in node.keywords:
+            if kw.arg == 'Loader':
+                # Check if value is SafeLoader or yaml.SafeLoader
+                if isinstance(kw.value, ast.Name) and kw.value.id == 'SafeLoader':
+                    return
+                if (isinstance(kw.value, ast.Attribute) and kw.value.attr == 'SafeLoader'):
+                    return
+        self.findings.append(Finding(
+            id=make_id(),
+            antipattern='yaml_unsafe_load',
+            antipattern_name='Unsafe YAML Load',
+            category='security',
+            severity='high',
+            confidence=0.95,
+            file=self.filepath,
+            line_start=node.lineno,
+            line_end=node.lineno,
+            language='python',
+            language_pack=PACK_VERSION,
+            message="yaml.load() called without Loader=SafeLoader. This allows arbitrary code running via YAML deserialization.",
+            remediation="Use yaml.safe_load() or pass Loader=yaml.SafeLoader: yaml.load(data, Loader=yaml.SafeLoader)",
+            effort='minutes',
+            tool='ast-checker',
+            rule_id='python/yaml-unsafe-load',
+            code_snippet=self._snippet(node),
+            references=['https://pyyaml.org/wiki/PyYAMLDocumentation'],
+            tags=['security', 'deserialization'],
+        ))
+
+    # --- open() not inside with statement ---
+    def _check_file_not_closed(self, node: ast.Call):
+        """Detect open() calls that are NOT inside a with statement."""
+        if not (isinstance(node.func, ast.Name) and node.func.id == 'open'):
+            return
+        # Check if parent is a withitem (i.e., inside a `with` statement)
+        parent = getattr(node, '_parent', None)
+        if isinstance(parent, ast.withitem):
+            return
+        self.findings.append(Finding(
+            id=make_id(),
+            antipattern='file_not_closed',
+            antipattern_name='File Not Closed',
+            category='code_structure',
+            severity='medium',
+            confidence=0.8,
+            file=self.filepath,
+            line_start=node.lineno,
+            line_end=node.lineno,
+            language='python',
+            language_pack=PACK_VERSION,
+            message="open() called outside a `with` statement. The file handle may not be closed on exceptions, causing resource leaks.",
+            remediation="Use a context manager: `with open(path) as f:` to ensure the file is always closed.",
+            effort='minutes',
+            tool='ast-checker',
+            rule_id='python/file-not-closed',
+            code_snippet=self._snippet(node),
+            tags=['resource-management', 'reliability'],
+        ))
+
+    # --- Test functions with no assertions ---
+    def _check_test_no_assertion(self, node):
+        """In test files, detect test_ functions that contain no assert statement and no self.assert* call."""
+        basename = os.path.basename(self.filepath)
+        if 'test_' not in basename and '_test' not in basename:
+            return
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return
+        if not node.name.startswith('test_'):
+            return
+
+        has_assertion = False
+        for child in ast.walk(node):
+            # Check for assert statements
+            if isinstance(child, ast.Assert):
+                has_assertion = True
+                break
+            # Check for self.assert*() calls
+            if isinstance(child, ast.Call):
+                if (isinstance(child.func, ast.Attribute)
+                        and child.func.attr.startswith('assert')
+                        and isinstance(child.func.value, ast.Name)
+                        and child.func.value.id == 'self'):
+                    has_assertion = True
+                    break
+
+        if not has_assertion:
+            self.findings.append(Finding(
+                id=make_id(),
+                antipattern='test_no_assertion',
+                antipattern_name='Test Without Assertion',
+                category='test_quality',
+                severity='medium',
+                confidence=0.85,
+                file=self.filepath,
+                line_start=node.lineno,
+                line_end=getattr(node, 'end_lineno', node.lineno),
+                language='python',
+                language_pack=PACK_VERSION,
+                message=f"Test function '{node.name}' contains no assert statement or self.assert*() call. A test without assertions verifies nothing.",
+                remediation=f"Add at least one assertion to '{node.name}' to verify expected behavior.",
+                effort='minutes',
+                tool='ast-checker',
+                rule_id='python/test-no-assertion',
+                tags=['test_quality', 'test-smell'],
+            ))
 
 
 def _set_parents(tree: ast.AST):

@@ -717,6 +717,207 @@ function checkNonNullAssertion(
   return findings
 }
 
+function checkEvalUsage(
+  ast: TSESTree.Program,
+  filePath: string,
+  sourceLines: string[]
+): Finding[] {
+  const findings: Finding[] = []
+  const now = new Date().toISOString()
+  const lang = inferLang(filePath)
+
+  // Detect eval() calls
+  walkAST(ast, (node) => {
+    if (node.type !== AST_NODE_TYPES.CallExpression) return
+    if (
+      node.callee.type === AST_NODE_TYPES.Identifier &&
+      node.callee.name === 'eval'
+    ) {
+      findings.push({
+        id: makeId(),
+        antipattern: 'eval_usage',
+        antipattern_name: 'eval() Usage',
+        category: 'security',
+        severity: 'critical',
+        confidence: 1.0,
+        file: filePath,
+        line_start: node.loc.start.line,
+        line_end: node.loc.end.line,
+        language: lang,
+        language_pack: PACK_VERSION,
+        message: '`eval()` runs arbitrary code. This is a critical security risk if the input is user-controlled.',
+        remediation: 'Remove eval() and use safer alternatives: JSON.parse() for data, a dispatch object for dynamic behavior.',
+        effort: 'hours',
+        tool: 'ast-checker',
+        rule_id: 'ts/eval-usage',
+        references: ['https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval#never_use_eval!'],
+        tags: ['security', 'injection'],
+        detected_at: now,
+      })
+    }
+  })
+
+  // Detect new Function() constructor -- equivalent to eval
+  walkAST(ast, (node) => {
+    if (
+      node.type === AST_NODE_TYPES.NewExpression &&
+      node.callee.type === AST_NODE_TYPES.Identifier &&
+      node.callee.name === 'Function'
+    ) {
+      findings.push({
+        id: makeId(),
+        antipattern: 'eval_usage',
+        antipattern_name: 'new Function() Usage',
+        category: 'security',
+        severity: 'critical',
+        confidence: 1.0,
+        file: filePath,
+        line_start: node.loc.start.line,
+        line_end: node.loc.end.line,
+        language: lang,
+        language_pack: PACK_VERSION,
+        message: '`new Function()` is equivalent to eval() and runs arbitrary code.',
+        remediation: 'Remove new Function() and use safer alternatives: named functions, dispatch objects, or closures.',
+        effort: 'hours',
+        tool: 'ast-checker',
+        rule_id: 'ts/eval-usage',
+        tags: ['security', 'injection'],
+        detected_at: now,
+      })
+    }
+  })
+
+  return findings
+}
+
+function checkInnerHtmlAssignment(
+  ast: TSESTree.Program,
+  filePath: string,
+  sourceLines: string[]
+): Finding[] {
+  const findings: Finding[] = []
+  const now = new Date().toISOString()
+  const lang = inferLang(filePath)
+
+  walkAST(ast, (node) => {
+    if (node.type !== AST_NODE_TYPES.AssignmentExpression) return
+
+    // Check if left side is .innerHTML or .outerHTML
+    const left = node.left
+    if (left.type !== AST_NODE_TYPES.MemberExpression) return
+    if (left.property.type !== AST_NODE_TYPES.Identifier) return
+    const prop = left.property.name
+    if (prop !== 'innerHTML' && prop !== 'outerHTML') return
+
+    findings.push({
+      id: makeId(),
+      antipattern: 'innerhtml_assignment',
+      antipattern_name: 'innerHTML/outerHTML Assignment',
+      category: 'security',
+      severity: 'high',
+      confidence: 0.9,
+      file: filePath,
+      line_start: node.loc.start.line,
+      line_end: node.loc.end.line,
+      language: lang,
+      language_pack: PACK_VERSION,
+      message: `Assignment to \`.${prop}\` can lead to Cross-Site Scripting (XSS) if the value contains unsanitized user input.`,
+      remediation: 'Use .textContent for text, or sanitize HTML with DOMPurify before assigning to .innerHTML. Consider using a framework with built-in XSS protection.',
+      effort: 'minutes',
+      tool: 'ast-checker',
+      rule_id: 'ts/innerhtml-assignment',
+      references: ['https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html'],
+      tags: ['security', 'xss', 'owasp-a07'],
+      detected_at: now,
+    })
+  })
+
+  return findings
+}
+
+function checkTestNoAssertion(
+  ast: TSESTree.Program,
+  filePath: string,
+  sourceLines: string[]
+): Finding[] {
+  const findings: Finding[] = []
+  const now = new Date().toISOString()
+  const lang = inferLang(filePath)
+
+  // Only check test files
+  const isTestFile = filePath.includes('.test.') || filePath.includes('.spec.') || filePath.includes('__tests__')
+  if (!isTestFile) return findings
+
+  walkAST(ast, (node) => {
+    if (node.type !== AST_NODE_TYPES.CallExpression) return
+    if (node.callee.type !== AST_NODE_TYPES.Identifier) return
+    if (node.callee.name !== 'it' && node.callee.name !== 'test') return
+
+    // The callback is typically the 2nd argument (1st is the description string)
+    if (node.arguments.length < 2) return
+    const callback = node.arguments[1]
+    if (
+      callback.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+      callback.type !== AST_NODE_TYPES.FunctionExpression
+    ) return
+
+    // Check if the callback body contains an expect() call
+    let hasExpect = false
+    walkAST(callback, (inner) => {
+      if (
+        inner.type === AST_NODE_TYPES.CallExpression &&
+        inner.callee.type === AST_NODE_TYPES.Identifier &&
+        inner.callee.name === 'expect'
+      ) {
+        hasExpect = true
+      }
+      // Also check for expect as part of a member expression chain (e.g., expect(...).toBe)
+      if (
+        inner.type === AST_NODE_TYPES.CallExpression &&
+        inner.callee.type === AST_NODE_TYPES.MemberExpression &&
+        inner.callee.object.type === AST_NODE_TYPES.CallExpression &&
+        inner.callee.object.callee.type === AST_NODE_TYPES.Identifier &&
+        inner.callee.object.callee.name === 'expect'
+      ) {
+        hasExpect = true
+      }
+    })
+
+    if (!hasExpect) {
+      // Get the test description from the first argument
+      let testName = '<unnamed>'
+      if (node.arguments[0].type === AST_NODE_TYPES.Literal && typeof node.arguments[0].value === 'string') {
+        testName = node.arguments[0].value
+      } else if (node.arguments[0].type === AST_NODE_TYPES.TemplateLiteral && node.arguments[0].quasis.length > 0) {
+        testName = node.arguments[0].quasis[0].value.raw
+      }
+
+      findings.push({
+        id: makeId(),
+        antipattern: 'test_no_assertion',
+        antipattern_name: 'Test Without Assertion',
+        category: 'test_quality',
+        severity: 'medium',
+        confidence: 0.85,
+        file: filePath,
+        line_start: node.loc.start.line,
+        line_end: node.loc.end.line,
+        language: lang,
+        language_pack: PACK_VERSION,
+        message: `Test '${testName}' contains no expect() call. A test without assertions verifies nothing.`,
+        remediation: 'Add at least one expect() assertion to verify expected behavior.',
+        effort: 'minutes',
+        tool: 'ast-checker',
+        rule_id: 'ts/test-no-assertion',
+        tags: ['test_quality', 'test-smell'],
+        detected_at: now,
+      })
+    }
+  })
+
+  return findings
+}
+
 // -----------------------------------------------------------------------------
 // AST Walking Utility
 // -----------------------------------------------------------------------------
@@ -791,6 +992,9 @@ function scanFile(filePath: string, repoRoot: string): Finding[] {
     ...checkPromiseNoCatch(ast, relPath, sourceLines),
     ...checkConsoleLogLeft(ast, relPath, sourceLines),
     ...checkNonNullAssertion(ast, relPath, sourceLines),
+    ...checkEvalUsage(ast, relPath, sourceLines),
+    ...checkInnerHtmlAssignment(ast, relPath, sourceLines),
+    ...checkTestNoAssertion(ast, relPath, sourceLines),
   ]
 }
 

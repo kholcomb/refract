@@ -821,6 +821,170 @@ func (c *checker) checkGoroutineClosureCapture(file *ast.File) {
 }
 
 // ============================================================================
+// CHECK: TLS InsecureSkipVerify
+// ============================================================================
+
+func (c *checker) checkTLSInsecureSkip(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := kv.Key.(*ast.Ident)
+		if !ok || ident.Name != "InsecureSkipVerify" {
+			return true
+		}
+		valIdent, ok := kv.Value.(*ast.Ident)
+		if !ok || valIdent.Name != "true" {
+			return true
+		}
+		pos := c.fset.Position(kv.Pos())
+		c.add(Finding{
+			Antipattern:     "tls_insecure_skip",
+			AntipatternName: "TLS InsecureSkipVerify",
+			Category:        "security",
+			Severity:        "critical",
+			Confidence:      1.0,
+			LineStart:       pos.Line,
+			LineEnd:         pos.Line,
+			Message:         "InsecureSkipVerify is set to true. This disables TLS certificate verification and allows man-in-the-middle attacks.",
+			Remediation:     "Remove InsecureSkipVerify: true, or set it to false. Use proper CA certificates for TLS validation.",
+			Effort:          "minutes",
+			RuleID:          "go/tls-insecure-skip",
+			References:      []string{"https://pkg.go.dev/crypto/tls#Config"},
+			Tags:            []string{"security", "tls", "owasp-a07"},
+		})
+		return true
+	})
+}
+
+// ============================================================================
+// CHECK: SQL string concatenation
+// ============================================================================
+
+func (c *checker) checkSQLStringConcat(file *ast.File) {
+	sqlMethods := map[string]bool{"Query": true, "Exec": true, "QueryRow": true}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !sqlMethods[sel.Sel.Name] {
+			return true
+		}
+		if len(call.Args) == 0 {
+			return true
+		}
+		// Check if the first argument is a string concatenation (BinaryExpr with +)
+		binExpr, ok := call.Args[0].(*ast.BinaryExpr)
+		if !ok || binExpr.Op != token.ADD {
+			return true
+		}
+		pos := c.fset.Position(call.Pos())
+		c.add(Finding{
+			Antipattern:     "sql_string_concat",
+			AntipatternName: "SQL String Concatenation",
+			Category:        "security",
+			Severity:        "high",
+			Confidence:      0.85,
+			LineStart:       pos.Line,
+			LineEnd:         pos.Line,
+			Message:         fmt.Sprintf("String concatenation used in %s() query argument. This is a SQL injection vector.", sel.Sel.Name),
+			Remediation:     fmt.Sprintf("Use parameterized queries: db.%s(\"SELECT * FROM t WHERE id = $1\", userID)", sel.Sel.Name),
+			Effort:          "minutes",
+			RuleID:          "go/sql-string-concat",
+			References:      []string{"https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html"},
+			Tags:            []string{"security", "sql-injection", "owasp-a03"},
+		})
+		return true
+	})
+}
+
+// ============================================================================
+// CHECK: Weak rand usage in security context
+// ============================================================================
+
+func (c *checker) checkWeakRand(file *ast.File) {
+	// Check if file imports crypto or contains security-sensitive variable names
+	hasCryptoImport := false
+	for _, imp := range file.Imports {
+		if imp.Path != nil && strings.Contains(imp.Path.Value, "crypto") {
+			hasCryptoImport = true
+			break
+		}
+	}
+
+	// Check for security-sensitive variable names in the file
+	sensitiveNames := false
+	sensitiveKeywords := []string{"token", "secret", "password", "key"}
+	ast.Inspect(file, func(n ast.Node) bool {
+		if sensitiveNames {
+			return false
+		}
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		lower := strings.ToLower(ident.Name)
+		for _, kw := range sensitiveKeywords {
+			if strings.Contains(lower, kw) {
+				sensitiveNames = true
+				return false
+			}
+		}
+		return true
+	})
+
+	if !hasCryptoImport && !sensitiveNames {
+		return
+	}
+
+	// Now look for math/rand usage
+	randMethods := map[string]bool{
+		"Intn": true, "Int": true, "Float64": true, "Float32": true,
+		"Int31": true, "Int31n": true, "Int63": true, "Int63n": true,
+		"Uint32": true, "Uint64": true,
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || pkg.Name != "rand" {
+			return true
+		}
+		if !randMethods[sel.Sel.Name] {
+			return true
+		}
+		pos := c.fset.Position(call.Pos())
+		c.add(Finding{
+			Antipattern:     "weak_rand",
+			AntipatternName: "Weak Random Number Generator",
+			Category:        "security",
+			Severity:        "high",
+			Confidence:      0.75,
+			LineStart:       pos.Line,
+			LineEnd:         pos.Line,
+			Message:         fmt.Sprintf("math/rand.%s() used in a file with security-sensitive context. math/rand is not cryptographically secure.", sel.Sel.Name),
+			Remediation:     "Use crypto/rand instead: e.g., crypto/rand.Read() or crypto/rand.Int() for security-sensitive random values.",
+			Effort:          "minutes",
+			RuleID:          "go/weak-rand",
+			References:      []string{"https://pkg.go.dev/crypto/rand"},
+			Tags:            []string{"security", "cryptography"},
+		})
+		return true
+	})
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -911,6 +1075,9 @@ func scanFile(fset *token.FileSet, filePath, repoRoot string) []Finding {
 	c.checkDeferInLoop(f)
 	c.checkErrorStringFormat(f)
 	c.checkGoroutineClosureCapture(f)
+	c.checkTLSInsecureSkip(f)
+	c.checkSQLStringConcat(f)
+	c.checkWeakRand(f)
 
 	return c.findings
 }
