@@ -1,5 +1,5 @@
 import { buildSummary, SEVERITY_ORDER } from '../src/index'
-import { Finding, Severity } from '../src/types'
+import { Finding, Severity } from '@refract/core'
 
 // Prevent the action's run() from executing on import
 jest.mock('@actions/core', () => ({

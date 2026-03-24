@@ -8,4 +8,7 @@ module.exports = {
   collectCoverageFrom: ['src/**/*.ts', '!src/index.ts'],
   coverageDirectory: 'coverage',
   moduleFileExtensions: ['ts', 'js', 'json'],
+  moduleNameMapper: {
+    '^@refract/core$': '<rootDir>/../core/src/index.ts',
+  },
 };

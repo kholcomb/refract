@@ -2,7 +2,7 @@ import { execFileSync } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 
-const SCRIPT_PATH = path.join(__dirname, '../language-packs/typescript/scripts/ast_checks.js')
+const SCRIPT_PATH = path.join(__dirname, '../../../language-packs/typescript/scripts/ast_checks.js')
 const FIXTURE_DIR = path.join(__dirname, 'fixtures/typescript')
 const OUTPUT_PATH = '/tmp/ts_ast_test_jest.json'
 

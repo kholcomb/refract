@@ -1,7 +1,6 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
-import { Finding, ScanResult, Severity } from './types'
-import { bySeverity } from './severity'
+import { Finding, ScanResult, Severity, bySeverity } from '@refract/core'
 
 const SEVERITY_EMOJI: Record<Severity, string> = {
   critical: '🔴',

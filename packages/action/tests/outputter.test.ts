@@ -5,7 +5,7 @@ import {
   formatCategory,
   truncate,
 } from '../src/outputter'
-import { Finding } from '../src/types'
+import { Finding } from '@refract/core'
 
 // Mock GitHub dependencies — not needed for template/util tests, but required at import time
 jest.mock('@actions/core', () => ({

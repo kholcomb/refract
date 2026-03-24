@@ -1,0 +1,173 @@
+{
+  "name": "@refract/vscode",
+  "displayName": "Anti-Pattern Detector",
+  "description": "Real-time anti-pattern detection with AI agent-ready findings. The IDE layer of your CI pipeline.",
+  "version": "0.1.0",
+  "publisher": "your-org",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/antipattern-detector"
+  },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Linters", "Other"],
+  "keywords": ["antipattern", "code quality", "ast", "ai", "security"],
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:typescript",
+    "onLanguage:javascript"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "antipattern.scanFile",
+        "title": "Anti-Pattern: Scan Current File",
+        "icon": "$(search)"
+      },
+      {
+        "command": "antipattern.scanWorkspace",
+        "title": "Anti-Pattern: Scan Entire Workspace",
+        "icon": "$(search-view-icon)"
+      },
+      {
+        "command": "antipattern.showPanel",
+        "title": "Anti-Pattern: Show Findings Panel",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "antipattern.copyAsAgentPrompt",
+        "title": "Anti-Pattern: Copy as AI Agent Prompt"
+      },
+      {
+        "command": "antipattern.clearFindings",
+        "title": "Anti-Pattern: Clear All Findings"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "antipatternExplorer",
+          "title": "Anti-Pattern Detector",
+          "icon": "media/activitybar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "antipatternExplorer": [
+        {
+          "id": "antipattern.findingsTree",
+          "name": "Findings",
+          "icon": "$(warning)",
+          "contextualTitle": "Anti-Pattern Findings"
+        },
+        {
+          "id": "antipattern.summaryView",
+          "name": "Summary",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "antipattern.scanFile",
+          "group": "antipattern@1",
+          "when": "resourceLangId =~ /python|typescript|javascript/"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "antipattern.scanWorkspace",
+          "when": "view == antipattern.findingsTree",
+          "group": "navigation"
+        },
+        {
+          "command": "antipattern.clearFindings",
+          "when": "view == antipattern.findingsTree",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Anti-Pattern Detector",
+      "properties": {
+        "antipattern.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable real-time anti-pattern detection on save"
+        },
+        "antipattern.severityThreshold": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low"],
+          "default": "medium",
+          "description": "Minimum severity level to surface as a diagnostic"
+        },
+        "antipattern.confidenceThreshold": {
+          "type": "number",
+          "default": 0.7,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum confidence score (0.0-1.0) to report a finding"
+        },
+        "antipattern.categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["code_structure", "security", "dependencies", "test_quality"]
+          },
+          "default": ["code_structure", "security", "dependencies", "test_quality"],
+          "description": "Which anti-pattern categories to scan"
+        },
+        "antipattern.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to the Python interpreter used to run AST checks"
+        },
+        "antipattern.ignorePaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["**/node_modules/**", "**/__pycache__/**", "**/venv/**", "**/dist/**"],
+          "description": "Glob patterns to exclude from scanning"
+        },
+        "antipattern.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub token for opening issues directly from the IDE (optional)"
+        },
+        "antipattern.showInlineHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline code lens hints above affected lines"
+        },
+        "antipattern.ciParity": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use identical thresholds as your action.yml so IDE previews exactly what CI will catch"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run build:ext && npm run build:lsp",
+    "build:ext": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node --sourcemap",
+    "build:lsp": "esbuild src/lsp/server.ts --bundle --outfile=dist/lspServer.js --platform=node --sourcemap",
+    "watch": "npm run build -- --watch",
+    "package": "vsce package",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@refract/core": "1.0.0",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11",
+    "vscode-uri": "^3.0.8"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.5.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}

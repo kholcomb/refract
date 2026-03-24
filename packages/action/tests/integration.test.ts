@@ -8,7 +8,7 @@
 import { execFileSync } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
-import { Finding } from '../src/types'
+import { Finding } from '@refract/core'
 
 // ── Mock @actions/core and @actions/exec ─────────────────────────────────────
 // These must be set up before importing language packs, because the modules
@@ -113,7 +113,7 @@ describe('Integration: Python AST sidecar', () => {
 
   it('should produce valid findings from Python fixtures', () => {
     execFileSync('python3', [
-      path.join(__dirname, '../language-packs/python/scripts/ast_checks.py'),
+      path.join(__dirname, '../../../language-packs/python/scripts/ast_checks.py'),
       fixtureDir,
       '--output', outputPath,
     ])
@@ -149,7 +149,7 @@ describe('Integration: TypeScript AST sidecar', () => {
 
   it('should produce valid findings from TypeScript fixtures', () => {
     execFileSync('node', [
-      path.join(__dirname, '../language-packs/typescript/scripts/ast_checks.js'),
+      path.join(__dirname, '../../../language-packs/typescript/scripts/ast_checks.js'),
       fixtureDir,
       '--output', outputPath,
     ])

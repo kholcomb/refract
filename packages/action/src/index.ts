@@ -8,9 +8,8 @@ import { scanTypeScript } from './language-packs/typescript'
 import { GitHubOutputter } from './outputter'
 import {
   Finding, ScanResult, ScanSummary, ScanMeta,
-  Severity, AntipatternCategory
-} from './types'
-import { SEVERITY_ORDER } from './severity'
+  Severity, AntipatternCategory, SEVERITY_ORDER
+} from '@refract/core'
 
 export { SEVERITY_ORDER }
 

@@ -362,10 +362,17 @@ def main():
     parser.add_argument('path', help='Root path to scan')
     parser.add_argument('--output', default='/tmp/ast_findings.json')
     parser.add_argument('--ignore', default='', help='Comma-separated ignore prefixes')
+    parser.add_argument('--single-file', default='',
+                        help='Scan only this specific file (IDE mode — faster)')
     args = parser.parse_args()
 
     ignore = [p.strip() for p in args.ignore.split(',') if p.strip()]
-    findings = scan_directory(args.path, ignore)
+
+    # IDE mode: scan just the saved file, not the whole directory
+    if args.single_file and os.path.isfile(args.single_file):
+        findings = scan_file(args.single_file, args.path)
+    else:
+        findings = scan_directory(args.path, ignore)
 
     result = {
         'findings': [f.to_dict() for f in findings],

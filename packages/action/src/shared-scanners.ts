@@ -2,7 +2,7 @@ import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as fs from 'fs'
 import * as path from 'path'
-import { Finding } from './types'
+import { Finding } from '@refract/core'
 
 /**
  * Note: This module uses @actions/exec which calls child_process.execFile()
