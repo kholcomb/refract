@@ -10,9 +10,12 @@ refract/
 │   ├── python/
 │   │   ├── config/thresholds.yml         # default thresholds (overridable)
 │   │   └── scripts/ast_checks.py         # pure-stdlib AST walker
-│   └── typescript/
+│   ├── typescript/
+│   │   ├── config/thresholds.yml
+│   │   └── scripts/ast_checks.{ts,js}    # typescript-estree AST walker
+│   └── go/
 │       ├── config/thresholds.yml
-│       └── scripts/ast_checks.{ts,js}    # typescript-estree AST walker
+│       └── scripts/ast_checks{,.go}       # go/ast stdlib walker (compiled binary)
 ├── packages/
 │   ├── core/                             # @refract/core
 │   │   └── src/
@@ -28,7 +31,8 @@ refract/
 │   │       ├── language-detector.ts      # file-extension language detection
 │   │       ├── language-packs/
 │   │       │   ├── python.ts             # orchestrates lizard, gitleaks, bandit, etc.
-│   │       │   └── typescript.ts         # orchestrates lizard, gitleaks, npm audit, etc.
+│   │       │   ├── typescript.ts         # orchestrates lizard, gitleaks, npm audit, etc.
+│   │       │   └── go.ts                 # orchestrates gosec, gitleaks, govulncheck, etc.
 │   │       ├── shared-scanners.ts        # gitleaks single-pass with cache
 │   │       └── outputter.ts              # issues, PR comments, step summary, Slack
 │   └── vscode/                           # @refract/vscode
