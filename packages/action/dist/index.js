@@ -35366,9 +35366,13 @@ async function run() {
             }
             core.endGroup();
         }
+        // --- Filter by ignored paths (safety net for tools that don't support exclusion) ---
+        const pathFilteredFindings = pathsIgnore.length > 0
+            ? allFindings.filter(f => !pathsIgnore.some(p => f.file.startsWith(p)))
+            : allFindings;
         // --- Filter by severity threshold ---
         const thresholdIndex = core_1.SEVERITY_ORDER.indexOf(severityThresh);
-        const filteredFindings = allFindings.filter(f => core_1.SEVERITY_ORDER.indexOf(f.severity) <= thresholdIndex);
+        const filteredFindings = pathFilteredFindings.filter(f => core_1.SEVERITY_ORDER.indexOf(f.severity) <= thresholdIndex);
         core.info(`[stats] Total findings: ${allFindings.length} (${filteredFindings.length} above threshold)`);
         // --- Build result ---
         const scanDuration = Date.now() - startTime;
@@ -36826,7 +36830,7 @@ function generateId() {
 
 /***/ }),
 
-/***/ 6331:
+/***/ 5899:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36877,11 +36881,41 @@ const path = __importStar(__nccwpck_require__(6928));
 function getActionRoot() {
     return process.env.GITHUB_ACTION_PATH ?? path.join(__dirname, '..');
 }
-//# sourceMappingURL=action-root.js.map
+
 
 /***/ }),
 
-/***/ 8907:
+/***/ 5026:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.getActionRoot = void 0;
+__exportStar(__nccwpck_require__(5875), exports);
+__exportStar(__nccwpck_require__(4171), exports);
+__exportStar(__nccwpck_require__(5592), exports);
+var action_root_1 = __nccwpck_require__(5899);
+Object.defineProperty(exports, "getActionRoot", ({ enumerable: true, get: function () { return action_root_1.getActionRoot; } }));
+
+
+/***/ }),
+
+/***/ 4171:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -36897,11 +36931,11 @@ function bySeverity(a, b) {
 function severityAtOrAbove(severity, threshold) {
     return exports.SEVERITY_ORDER.indexOf(severity) <= exports.SEVERITY_ORDER.indexOf(threshold);
 }
-//# sourceMappingURL=severity.js.map
+
 
 /***/ }),
 
-/***/ 9580:
+/***/ 5592:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36943,7 +36977,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.loadThresholds = loadThresholds;
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
-const action_root_1 = __nccwpck_require__(6331);
+const action_root_1 = __nccwpck_require__(5899);
 const DEFAULT_THRESHOLDS = {
     code_structure: {
         max_cyclomatic_complexity: 10,
@@ -37037,11 +37071,11 @@ function parseYamlValue(raw) {
     // String
     return trimmed;
 }
-//# sourceMappingURL=thresholds.js.map
+
 
 /***/ }),
 
-/***/ 7167:
+/***/ 5875:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -37054,36 +37088,6 @@ function parseYamlValue(raw) {
  * This is the contract that downstream AI agents and issue trackers consume.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-//# sourceMappingURL=types.js.map
-
-/***/ }),
-
-/***/ 5026:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getActionRoot = void 0;
-__exportStar(__nccwpck_require__(7167), exports);
-__exportStar(__nccwpck_require__(8907), exports);
-__exportStar(__nccwpck_require__(9580), exports);
-var action_root_1 = __nccwpck_require__(6331);
-Object.defineProperty(exports, "getActionRoot", ({ enumerable: true, get: function () { return action_root_1.getActionRoot; } }));
 
 
 /***/ }),
