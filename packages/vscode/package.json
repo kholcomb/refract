@@ -1,5 +1,5 @@
 {
-  "name": "@refract/vscode",
+  "name": "antipattern-detector",
   "displayName": "Anti-Pattern Detector",
   "description": "Real-time anti-pattern detection with AI agent-ready findings. The IDE layer of your CI pipeline.",
   "version": "0.1.0",
@@ -159,7 +159,7 @@
     "build:lsp": "esbuild src/lsp/server.ts --bundle --outfile=dist/lspServer.js --platform=node --sourcemap --alias:@refract/core=../core/src/index.ts",
     "watch": "npm run build -- --watch",
     "prepackage": "cp -r ../../language-packs ./language-packs",
-    "package": "vsce package",
+    "package": "vsce package --no-dependencies",
     "postpackage": "rm -rf ./language-packs",
     "typecheck": "tsc --noEmit"
   },
