@@ -407,31 +407,110 @@ class AntiPatternVisitor(ast.NodeVisitor):
 
     # --- Magic numbers ---
     def visit_Constant(self, node: ast.Constant):
-        parent = getattr(node, '_parent', None)
+        if not isinstance(node.value, (int, float)):
+            self.generic_visit(node)
+            return
 
-        # Only flag numbers (not in simple assignments at module level, not 0/1/-1)
-        if isinstance(node.value, (int, float)) and node.value not in (0, 1, -1, 2, 100):
-            # Skip if this is an annotation or in an assert
-            if not isinstance(parent, (ast.AnnAssign, ast.Assert, ast.Index)):
-                self.findings.append(Finding(
-                    id=make_id(),
-                    antipattern='magic_number',
-                    antipattern_name='Magic Number',
-                    category='code_structure',
-                    severity='low',
-                    confidence=0.7,
-                    file=self.filepath,
-                    line_start=node.lineno,
-                    line_end=node.lineno,
-                    language='python',
-                    language_pack=PACK_VERSION,
-                    message=f"Magic number `{node.value}` -- unexplained numeric literal makes intent unclear.",
-                    remediation=f"Extract to a named constant: `MAX_RETRIES = {node.value}` and reference it by name.",
-                    effort='minutes',
-                    tool='ast-checker',
-                    rule_id='python/magic-number',
-                    tags=['readability', 'maintainability'],
-                ))
+        # Trivial values -- too common in arithmetic to be meaningful
+        if node.value in (0, 1, -1, 2):
+            self.generic_visit(node)
+            return
+
+        parent = getattr(node, '_parent', None)
+        grandparent = getattr(parent, '_parent', None) if parent else None
+
+        # Context: skip annotations, asserts, type hints
+        if isinstance(parent, (ast.AnnAssign, ast.Assert)):
+            self.generic_visit(node)
+            return
+
+        # Context: skip named assignments at module/class level
+        # e.g. MAX_RETRIES = 3, DEFAULT_TIMEOUT = 30
+        if isinstance(parent, ast.Assign) and isinstance(grandparent, ast.Module):
+            self.generic_visit(node)
+            return
+
+        # Context: skip named constants in UPPER_CASE assignments
+        if isinstance(parent, ast.Assign) and parent.targets:
+            target = parent.targets[0]
+            if isinstance(target, ast.Name) and target.id.isupper():
+                self.generic_visit(node)
+                return
+
+        # Context: skip default parameter values
+        # (these are in FunctionDef.args.defaults)
+        if isinstance(parent, ast.arguments):
+            self.generic_visit(node)
+            return
+
+        # Context: skip decorator arguments
+        if isinstance(parent, ast.Call) and isinstance(grandparent, ast.expr):
+            # Heuristic: decorators show up as Call nodes
+            pass  # don't skip, but could refine
+
+        # Context: skip keyword arguments (Field(default=3600), timeout=30)
+        if isinstance(parent, ast.keyword):
+            self.generic_visit(node)
+            return
+
+        # Context: skip function call arguments when the function name suggests configuration
+        # e.g. sleep(5), range(10), Field(default=3600)
+        if isinstance(parent, ast.Call):
+            self.generic_visit(node)
+            return
+
+        # Context: skip comparisons (if status == 200) -- the value is contextual
+        if isinstance(parent, ast.Compare):
+            self.generic_visit(node)
+            return
+
+        # Context: skip test files
+        if self.filepath.endswith(('_test.py', 'test_.py')) or '/test' in self.filepath:
+            self.generic_visit(node)
+            return
+
+        # Context: skip hex/octal literals (bitmasks, file permissions)
+        # Python AST resolves these to ints, but we can check the source
+        if node.lineno <= len(self.source_lines):
+            source_line = self.source_lines[node.lineno - 1]
+            if '0x' in source_line or '0X' in source_line or '0o' in source_line or '0O' in source_line:
+                self.generic_visit(node)
+                return
+
+        # Context: skip dict/list/tuple literals used as data (not logic)
+        if isinstance(parent, (ast.Dict, ast.List, ast.Tuple, ast.Set)):
+            self.generic_visit(node)
+            return
+
+        # Context: skip slice indices and slice bounds (arr[:500])
+        if isinstance(parent, (ast.Subscript, ast.Slice)):
+            self.generic_visit(node)
+            return
+
+        # Context: skip binary operations (arithmetic like 2 ** n, x * 1024)
+        if isinstance(parent, ast.BinOp):
+            self.generic_visit(node)
+            return
+
+        self.findings.append(Finding(
+            id=make_id(),
+            antipattern='magic_number',
+            antipattern_name='Magic Number',
+            category='code_structure',
+            severity='low',
+            confidence=0.7,
+            file=self.filepath,
+            line_start=node.lineno,
+            line_end=node.lineno,
+            language='python',
+            language_pack=PACK_VERSION,
+            message=f"Magic number `{node.value}` -- unexplained numeric literal makes intent unclear.",
+            remediation=f"Extract to a named constant: `THRESHOLD = {node.value}` and reference it by name.",
+            effort='minutes',
+            tool='ast-checker',
+            rule_id='python/magic-number',
+            tags=['readability', 'maintainability'],
+        ))
         self.generic_visit(node)
 
     # --- N+1 query pattern (ORM loop) ---

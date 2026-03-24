@@ -41,10 +41,14 @@ def parse_value(raw):
 
 # ── Magic numbers ─────────────────────────────────────────────────────────────
 def calculate_discount(price):
-    if price > 999:                    # antipattern: magic_number (999)
-        return price * 0.85            # antipattern: magic_number (0.85)
-    elif price > 499:                  # antipattern: magic_number (499)
-        return price * 0.92            # antipattern: magic_number (0.92)
+    # These magic numbers survive contextual filtering because they are
+    # standalone in if-body statements, not in comparisons or arithmetic
+    if price > 999:
+        discount_rate = 0.85           # antipattern: magic_number (standalone assignment)
+    elif price > 499:
+        discount_rate = 0.92           # antipattern: magic_number (standalone assignment)
+    else:
+        discount_rate = 0.97           # antipattern: magic_number (standalone assignment)
     return price
 
 

@@ -151,32 +151,56 @@ function checkMagicNumbers(ast, filePath, sourceLines) {
     const findings = [];
     const now = new Date().toISOString();
     const lang = inferLang(filePath);
-    const ALLOWED = new Set([0, 1, -1, 2, 100]);
+    const TRIVIAL = new Set([0, 1, -1]);
+    const isTestFile = filePath.includes('.test.') || filePath.includes('.spec.') || filePath.includes('__tests__');
     walkAST(ast, (node, ancestors) => {
         if (node.type !== typescript_estree_1.AST_NODE_TYPES.Literal)
             return;
         if (typeof node.value !== 'number')
             return;
-        if (ALLOWED.has(node.value))
+        if (TRIVIAL.has(node.value))
             return;
-        // Skip: array indices, enum values, type annotations, default parameter values in simple cases
         const parent = ancestors[ancestors.length - 1];
+        const grandparent = ancestors[ancestors.length - 2];
         if (!parent)
             return;
+        // Context: skip test files (assertions use literal values)
+        if (isTestFile)
+            return;
+        // Context: skip enum members, type annotations, type literals
         if (parent.type === typescript_estree_1.AST_NODE_TYPES.TSEnumMember)
             return;
         if (parent.type === typescript_estree_1.AST_NODE_TYPES.TSTypeAliasDeclaration)
             return;
         if (parent.type === typescript_estree_1.AST_NODE_TYPES.TSLiteralType)
             return;
-        // Skip constants: const X = 42
-        if (parent.type === typescript_estree_1.AST_NODE_TYPES.VariableDeclarator &&
-            ancestors.length >= 2) {
-            const grandparent = ancestors[ancestors.length - 2];
-            if (grandparent?.type === typescript_estree_1.AST_NODE_TYPES.VariableDeclaration &&
+        // Context: skip const declarations (const X = 42)
+        if (parent.type === typescript_estree_1.AST_NODE_TYPES.VariableDeclarator && grandparent) {
+            if (grandparent.type === typescript_estree_1.AST_NODE_TYPES.VariableDeclaration &&
                 grandparent.kind === 'const')
                 return;
         }
+        // Context: skip default parameter values
+        if (parent.type === typescript_estree_1.AST_NODE_TYPES.AssignmentPattern)
+            return;
+        // Context: skip array/object literal values (data, not logic)
+        if (parent.type === typescript_estree_1.AST_NODE_TYPES.ArrayExpression)
+            return;
+        if (parent.type === typescript_estree_1.AST_NODE_TYPES.Property && grandparent?.type === typescript_estree_1.AST_NODE_TYPES.ObjectExpression)
+            return;
+        // Context: skip computed property access (arr[0], obj[2])
+        if (parent.type === typescript_estree_1.AST_NODE_TYPES.MemberExpression && parent.computed)
+            return;
+        // Context: skip bitwise operations (bitmasks are self-documenting)
+        if (parent.type === typescript_estree_1.AST_NODE_TYPES.BinaryExpression) {
+            const op = parent.operator;
+            if (op === '&' || op === '|' || op === '^' || op === '<<' || op === '>>' || op === '>>>')
+                return;
+        }
+        // Context: skip hex/octal in source (check raw representation)
+        const raw = node.raw;
+        if (raw && (raw.startsWith('0x') || raw.startsWith('0X') || raw.startsWith('0o') || raw.startsWith('0O')))
+            return;
         findings.push({
             id: makeId(),
             antipattern: 'magic_number',
