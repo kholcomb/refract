@@ -7,7 +7,7 @@ import {
 } from '../src/outputter'
 import { Finding } from '@refract/core'
 
-// Mock GitHub dependencies — not needed for template/util tests, but required at import time
+// Mock GitHub dependencies -- not needed for template/util tests, but required at import time
 jest.mock('@actions/core', () => ({
   info: jest.fn(),
   warning: jest.fn(),

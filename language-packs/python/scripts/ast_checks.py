@@ -70,7 +70,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
         end = min(len(self.source_lines), node.lineno + context)
         return ''.join(self.source_lines[start:end]).strip()
 
-    # ── Mutable default arguments ────────────────────────────────────────────
+    # --- Mutable default arguments ---
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self._check_mutable_defaults(node)
         self._check_function_nesting(node)
@@ -95,7 +95,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
                     line_end=node.lineno,
                     language='python',
                     language_pack=PACK_VERSION,
-                    message=f"Function '{node.name}' uses a mutable {type_name} as a default argument — "
+                    message=f"Function '{node.name}' uses a mutable {type_name} as a default argument -- "
                             f"this is shared across all calls and causes subtle bugs.",
                     remediation=(
                         f"Replace the mutable default with None and initialize inside the function:\n"
@@ -156,7 +156,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 tags=['maintainability', 'readability'],
             ))
 
-    # ── Bare except ──────────────────────────────────────────────────────────
+    # --- Bare except ---
     def visit_ExceptHandler(self, node: ast.ExceptHandler):
         if node.type is None:
             # bare `except:`
@@ -192,7 +192,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
             ))
         self.generic_visit(node)
 
-    # ── Wildcard imports ─────────────────────────────────────────────────────
+    # --- Wildcard imports ---
     def visit_ImportFrom(self, node: ast.ImportFrom):
         for alias in node.names:
             if alias.name == '*':
@@ -219,7 +219,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 ))
         self.generic_visit(node)
 
-    # ── Magic numbers ────────────────────────────────────────────────────────
+    # --- Magic numbers ---
     def visit_Constant(self, node: ast.Constant):
         parent = getattr(node, '_parent', None)
 
@@ -239,7 +239,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
                     line_end=node.lineno,
                     language='python',
                     language_pack=PACK_VERSION,
-                    message=f"Magic number `{node.value}` — unexplained numeric literal makes intent unclear.",
+                    message=f"Magic number `{node.value}` -- unexplained numeric literal makes intent unclear.",
                     remediation=f"Extract to a named constant: `MAX_RETRIES = {node.value}` and reference it by name.",
                     effort='minutes',
                     tool='ast-checker',
@@ -248,7 +248,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 ))
         self.generic_visit(node)
 
-    # ── N+1 query pattern (ORM loop) ─────────────────────────────────────────
+    # --- N+1 query pattern (ORM loop) ---
     def visit_For(self, node: ast.For):
         """Detect `.filter(`, `.get(`, `.all()` calls inside for loops."""
         orm_methods = {'filter', 'get', 'all', 'first', 'last', 'count', 'exclude', 'select_related'}
@@ -363,7 +363,7 @@ def main():
     parser.add_argument('--output', default='/tmp/ast_findings.json')
     parser.add_argument('--ignore', default='', help='Comma-separated ignore prefixes')
     parser.add_argument('--single-file', default='',
-                        help='Scan only this specific file (IDE mode — faster)')
+                        help='Scan only this specific file (IDE mode -- faster)')
     args = parser.parse_args()
 
     ignore = [p.strip() for p in args.ignore.split(',') if p.strip()]
@@ -382,7 +382,7 @@ def main():
     with open(args.output, 'w') as out:
         json.dump(result, out, indent=2)
 
-    print(f"AST checker found {len(findings)} findings → {args.output}")
+    print(f"AST checker found {len(findings)} findings -> {args.output}")
 
 
 if __name__ == '__main__':

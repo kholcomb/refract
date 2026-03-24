@@ -17,7 +17,7 @@ export interface PythonScanOptions {
 export async function scanPython(options: PythonScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
 
-  core.info('🐍 Running Python language pack...')
+  core.info('[py] Running Python language pack...')
 
   if (options.categories.includes('code_structure')) {
     findings.push(...await runStructureChecks(options))
@@ -35,14 +35,14 @@ export async function scanPython(options: PythonScanOptions): Promise<Finding[]>
   return findings.filter(f => f.confidence >= options.confidenceThreshold)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // CODE STRUCTURE
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runStructureChecks(options: PythonScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
 
-  core.info('  → Code structure checks (complexity, god classes, nesting...)')
+  core.info('  -> Code structure checks (complexity, god classes, nesting...)')
 
   // Install lizard for complexity analysis
   await exec.exec('pip', ['install', '--quiet', 'lizard'], { silent: true })
@@ -175,16 +175,16 @@ function parseLizardOutput(data: any, workspacePath: string): Finding[] {
   return findings
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // SECURITY
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runSecurityChecks(options: PythonScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
 
-  core.info('  → Security checks (secrets, injection, weak crypto...)')
+  core.info('  -> Security checks (secrets, injection, weak crypto...)')
 
-  // gitleaks for secrets (MIT licensed) — shared single-pass scanner
+  // gitleaks for secrets (MIT licensed) -- shared single-pass scanner
   const pyExtensions = new Set(['.py', '.pyw'])
   findings.push(...await runGitleaks(options.workspacePath, PACK_VERSION, 'python', pyExtensions))
 
@@ -279,15 +279,15 @@ function buildSecurityRemediation(testId: string): string {
   return remediations[testId] ?? 'Review this security issue and apply the principle of least privilege.'
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // DEPENDENCIES
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runDependencyChecks(options: PythonScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
   const now = new Date().toISOString()
 
-  core.info('  → Dependency checks (CVEs, outdated, unused...)')
+  core.info('  -> Dependency checks (CVEs, outdated, unused...)')
 
   // osv-scanner for CVEs (Apache 2.0)
   const osvOutput = await runCommand(
@@ -384,15 +384,15 @@ function osvSeverity(vuln: any): Severity {
   return 'low'
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // TEST QUALITY
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runTestQualityChecks(options: PythonScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
   const now = new Date().toISOString()
 
-  core.info('  → Test quality checks (coverage, bare asserts, missing tests...)')
+  core.info('  -> Test quality checks (coverage, bare asserts, missing tests...)')
 
   // pytest-cov for coverage
   await exec.exec('pip', ['install', '--quiet', 'pytest', 'pytest-cov'], { silent: true })
@@ -442,9 +442,9 @@ async function runTestQualityChecks(options: PythonScanOptions): Promise<Finding
   return findings
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // UTILITIES
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runCommand(
   cmd: string,

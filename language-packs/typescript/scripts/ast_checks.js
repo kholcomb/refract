@@ -10,7 +10,7 @@
  *   - Excessive mocking (>5 jest.mock() calls in a single test file)
  *   - God class (class with >15 methods)
  *
- * Uses @typescript-eslint/typescript-estree (BSD-2-Clause — safe to monetize)
+ * Uses @typescript-eslint/typescript-estree (BSD-2-Clause -- safe to monetize)
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -62,9 +62,9 @@ const SKIP_DIRS = new Set([
     '.cache', '__pycache__', '.venv', 'vendor',
 ]);
 const JS_TS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // AST Checkers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 function checkDeepNesting(ast, filePath, sourceLines) {
     const findings = [];
     const now = new Date().toISOString();
@@ -189,7 +189,7 @@ function checkMagicNumbers(ast, filePath, sourceLines) {
             line_end: node.loc.start.line,
             language: lang,
             language_pack: PACK_VERSION,
-            message: `Magic number \`${node.value}\` — unexplained numeric literal makes intent unclear.`,
+            message: `Magic number \`${node.value}\` -- unexplained numeric literal makes intent unclear.`,
             remediation: `Extract to a named constant: \`const THRESHOLD = ${node.value}\` and reference it by name.`,
             effort: 'minutes',
             tool: 'ast-checker',
@@ -248,7 +248,7 @@ function checkAssertionRoulette(ast, filePath, sourceLines) {
                 line_end: node.loc.end.line,
                 language: lang,
                 language_pack: PACK_VERSION,
-                message: `Trivial assertion \`expect(${expectArg.raw}).${method.name}(${arg.raw})\` always passes — this tests nothing.`,
+                message: `Trivial assertion \`expect(${expectArg.raw}).${method.name}(${arg.raw})\` always passes -- this tests nothing.`,
                 remediation: 'Replace with a meaningful assertion that tests actual behavior: `expect(result).toBe(expectedValue)`.',
                 effort: 'minutes',
                 tool: 'ast-checker',
@@ -352,7 +352,7 @@ function checkAnyTypeAbuse(ast, filePath, sourceLines) {
     const findings = [];
     const now = new Date().toISOString();
     const lang = inferLang(filePath);
-    // Skip .js files — they don't have type annotations
+    // Skip .js files -- they don't have type annotations
     if (lang === 'javascript')
         return findings;
     let anyCount = 0;
@@ -477,9 +477,9 @@ function checkCallbackHell(ast, filePath, sourceLines) {
     });
     return findings;
 }
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // AST Walking Utility
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 function walkAST(node, visitor, ancestors = []) {
     visitor(node, ancestors);
     const nextAncestors = [...ancestors, node];
@@ -508,9 +508,9 @@ function getFunctionName(node) {
         return node.key.name;
     return '<anonymous>';
 }
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // File Scanner
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 function scanFile(filePath, repoRoot) {
     let source;
     try {
@@ -574,9 +574,9 @@ function scanDirectory(root, ignorePrefixes) {
     walk(root);
     return findings;
 }
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // CLI Entrypoint
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 function main() {
     const args = process.argv.slice(2);
     const rootPath = args[0];
@@ -597,6 +597,6 @@ function main() {
     const findings = scanDirectory(rootPath, ignorePrefixes);
     const result = { findings, count: findings.length };
     fs.writeFileSync(outputPath, JSON.stringify(result, null, 2));
-    console.log(`TS/JS AST checker found ${findings.length} findings → ${outputPath}`);
+    console.log(`TS/JS AST checker found ${findings.length} findings -> ${outputPath}`);
 }
 main();

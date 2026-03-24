@@ -52,12 +52,12 @@ interface ServerConfig {
   astCheckerPath: string
 }
 
-// ── Server setup ─────────────────────────────────────────────────────────────
+// --- Server setup ---
 
 const connection = createConnection(ProposedFeatures.all)
 const documents = new TextDocuments(TextDocument)
 
-// Per-file findings cache: filepath → Finding[]
+// Per-file findings cache: filepath -> Finding[]
 const findingsCache = new Map<string, Finding[]>()
 
 // Debounce timers per file
@@ -79,7 +79,7 @@ let config: ServerConfig = {
 
 let workspaceRoot = ''
 
-// ── Lifecycle ─────────────────────────────────────────────────────────────────
+// --- Lifecycle ---
 
 connection.onInitialize((params: InitializeParams): InitializeResult => {
   workspaceRoot = params.rootUri
@@ -125,14 +125,14 @@ connection.onInitialized(() => {
   connection.console.log('LSP initialized, ready to scan')
 })
 
-// ── Config sync ───────────────────────────────────────────────────────────────
+// --- Config sync ---
 
 connection.onNotification('antipattern/updateConfig', (newConfig: Partial<ServerConfig>) => {
   config = { ...config, ...newConfig }
   connection.console.log(`Config updated: ${JSON.stringify(config)}`)
 })
 
-// ── Scan on save ──────────────────────────────────────────────────────────────
+// --- Scan on save ---
 
 documents.onDidSave(event => {
   if (!config.enabled) return
@@ -167,7 +167,7 @@ documents.onDidOpen(event => {
   }
 })
 
-// ── Manual scan command ───────────────────────────────────────────────────────
+// --- Manual scan command ---
 
 connection.onNotification('antipattern/scanFile', ({ uri }: { uri: string }) => {
   const fsPath = URI.parse(uri).fsPath
@@ -189,7 +189,7 @@ connection.onNotification('antipattern/clearFindings', () => {
   connection.sendNotification('antipattern/findingsCleared')
 })
 
-// ── Core scan logic ───────────────────────────────────────────────────────────
+// --- Core scan logic ---
 
 async function scanFile(fsPath: string, lang: string, uri: string): Promise<void> {
   connection.console.log(`Scanning: ${fsPath}`)
@@ -209,7 +209,7 @@ async function scanFile(fsPath: string, lang: string, uri: string): Promise<void
       timestamp: new Date().toISOString(),
     })
 
-    connection.console.log(`  → ${findings.length} findings in ${path.basename(fsPath)}`)
+    connection.console.log(`  -> ${findings.length} findings in ${path.basename(fsPath)}`)
   } catch (e: any) {
     connection.console.error(`Scan failed for ${fsPath}: ${e.message}`)
   }
@@ -299,7 +299,7 @@ function runPythonAnalysis(
   proc.on('error', (e) => reject(e))
 }
 
-// ── LSP Diagnostics ───────────────────────────────────────────────────────────
+// --- LSP Diagnostics ---
 
 function publishDiagnostics(uri: string, findings: Finding[]): void {
   const diagnostics: Diagnostic[] = findings.map(findingToDiagnostic)
@@ -337,7 +337,7 @@ function severityToLSP(s: string): DiagnosticSeverity {
   }
 }
 
-// ── Code Actions ──────────────────────────────────────────────────────────────
+// --- Code Actions ---
 
 connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
   const actions: CodeAction[] = []
@@ -435,7 +435,7 @@ function buildAutoFix(
   }
 }
 
-// ── Agent prompt builder ──────────────────────────────────────────────────────
+// --- Agent prompt builder ---
 
 /**
  * Builds a structured prompt optimized for AI coding agents.
@@ -452,7 +452,7 @@ function buildAgentPrompt(finding: Finding): string {
 
 ### Location
 - File: \`${finding.file}\`
-- Lines: ${finding.line_start}–${finding.line_end}
+- Lines: ${finding.line_start}-${finding.line_end}
 - Language: ${finding.language}
 
 ### Problem
@@ -481,7 +481,7 @@ connection.onRequest('antipattern/buildAgentPrompt', (finding: Finding) => {
   return buildAgentPrompt(finding)
 })
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// --- Helpers ---
 
 function meetsThreshold(f: Finding): boolean {
   const threshIdx = SEVERITY_ORDER.indexOf(config.severityThreshold as any)
@@ -543,6 +543,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms))
 }
 
-// ── Start ─────────────────────────────────────────────────────────────────────
+// --- Start ---
 documents.listen(connection)
 connection.listen()

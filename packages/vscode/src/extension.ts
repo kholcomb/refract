@@ -1,8 +1,8 @@
 /**
- * Anti-Pattern Detector — VS Code Extension Entrypoint
+ * Anti-Pattern Detector -- VS Code Extension Entrypoint
  *
  * Manages the LSP client lifecycle and wires up:
- *  - LSP client ↔ server connection
+ *  - LSP client <-> server connection
  *  - Commands (scan, copy prompt, show diff, open issue)
  *  - Activity bar tree view
  *  - Status bar item
@@ -25,12 +25,12 @@ let statusBarItem: vscode.StatusBarItem
 let treeProvider: FindingsTreeProvider
 let summaryPanel: SummaryPanel | undefined
 
-// ── Activate ──────────────────────────────────────────────────────────────────
+// --- Activate ---
 
 export async function activate(context: vscode.ExtensionContext) {
   const serverModule = context.asAbsolutePath(path.join('dist', 'lspServer.js'))
 
-  // LSP server options — runs in a Node.js child process
+  // LSP server options -- runs in a Node.js child process
   const serverOptions: ServerOptions = {
     run: {
       module: serverModule,
@@ -65,17 +65,17 @@ export async function activate(context: vscode.ExtensionContext) {
     clientOptions
   )
 
-  // ── Status bar ──────────────────────────────────────────────────────────────
+  // --- Status bar ---
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left, 100
   )
   statusBarItem.command = 'antipattern.showPanel'
   statusBarItem.text = '$(search) Anti-Pattern'
-  statusBarItem.tooltip = 'Anti-Pattern Detector — Click to show findings'
+  statusBarItem.tooltip = 'Anti-Pattern Detector -- Click to show findings'
   statusBarItem.show()
   context.subscriptions.push(statusBarItem)
 
-  // ── Tree view ───────────────────────────────────────────────────────────────
+  // --- Tree view ---
   treeProvider = new FindingsTreeProvider()
   const treeView = vscode.window.createTreeView('antipattern.findingsTree', {
     treeDataProvider: treeProvider,
@@ -83,8 +83,8 @@ export async function activate(context: vscode.ExtensionContext) {
   })
   context.subscriptions.push(treeView)
 
-  // ── LSP notifications from server ───────────────────────────────────────────
-  // Registered before client.start() — notifications are buffered until ready.
+  // --- LSP notifications from server ---
+  // Registered before client.start() -- notifications are buffered until ready.
 
   // Receive findings updates
   client.onNotification('antipattern/findingsUpdated', (data: {
@@ -117,7 +117,7 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   })
 
-  // ── Commands ────────────────────────────────────────────────────────────────
+  // --- Commands ---
 
   context.subscriptions.push(
     vscode.commands.registerCommand('antipattern.scanFile', () => {
@@ -226,7 +226,7 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   )
 
-  // ── Config change listener ──────────────────────────────────────────────────
+  // --- Config change listener ---
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('antipattern')) {
@@ -243,17 +243,17 @@ export async function activate(context: vscode.ExtensionContext) {
   syncConfigToServer()
 
   vscode.window.showInformationMessage(
-    '$(search) Anti-Pattern Detector active — findings will appear on save'
+    '$(search) Anti-Pattern Detector active -- findings will appear on save'
   )
 }
 
-// ── Deactivate ────────────────────────────────────────────────────────────────
+// --- Deactivate ---
 
 export function deactivate(): Thenable<void> | undefined {
   return client?.stop()
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// --- Helpers ---
 
 function syncConfigToServer(): void {
   const cfg = vscode.workspace.getConfiguration('antipattern')
@@ -288,7 +288,7 @@ function buildFixPreview(finding: any): { originalSnippet: string; fixedSnippet:
   switch (finding.antipattern) {
     case 'mutable_default_argument': {
       const original = finding.code_snippet
-      // Simple regex-based preview — real fix uses the interactive command
+      // Simple regex-based preview -- real fix uses the interactive command
       const fixed = original.replace(
         /(\w+)\s*=\s*(\[\]|\{\}|set\(\))/g,
         '$1=None  # was: $2'
@@ -325,7 +325,7 @@ ${finding.message}
 ${finding.remediation}
 
 ---
-> Detected by Anti-Pattern Detector · Rule: \`${finding.rule_id}\``
+> Detected by Anti-Pattern Detector - Rule: \`${finding.rule_id}\``
 }
 
 async function getRepoUrl(): Promise<string | null> {

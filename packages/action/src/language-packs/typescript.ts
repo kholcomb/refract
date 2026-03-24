@@ -17,7 +17,7 @@ export interface TypeScriptScanOptions {
 export async function scanTypeScript(options: TypeScriptScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
 
-  core.info('📘 Running TypeScript/JavaScript language pack...')
+  core.info('[ts] Running TypeScript/JavaScript language pack...')
 
   if (options.categories.includes('code_structure')) {
     findings.push(...await runStructureChecks(options))
@@ -35,14 +35,14 @@ export async function scanTypeScript(options: TypeScriptScanOptions): Promise<Fi
   return findings.filter(f => f.confidence >= options.confidenceThreshold)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // CODE STRUCTURE
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runStructureChecks(options: TypeScriptScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
 
-  core.info('  → Code structure checks (complexity, nesting, magic numbers...)')
+  core.info('  -> Code structure checks (complexity, nesting, magic numbers...)')
 
   // Lizard supports JS/TS
   const lizardInstalled = await runCommand(
@@ -180,31 +180,31 @@ function parseLizardOutput(data: any, workspacePath: string): Finding[] {
   return findings
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // SECURITY
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runSecurityChecks(options: TypeScriptScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
 
-  core.info('  → Security checks (secrets via gitleaks...)')
+  core.info('  -> Security checks (secrets via gitleaks...)')
 
-  // gitleaks (MIT) — shared single-pass scanner, filtered to JS/TS files
+  // gitleaks (MIT) -- shared single-pass scanner, filtered to JS/TS files
   const jstsExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
   findings.push(...await runGitleaks(options.workspacePath, PACK_VERSION, 'typescript', jstsExtensions))
 
   return findings
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // DEPENDENCIES
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runDependencyChecks(options: TypeScriptScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
   const now = new Date().toISOString()
 
-  core.info('  → Dependency checks (npm audit, osv-scanner...)')
+  core.info('  -> Dependency checks (npm audit, osv-scanner...)')
 
   // npm audit (built-in, MIT-compatible output)
   const packageJsonPath = path.join(options.workspacePath, 'package.json')
@@ -317,20 +317,20 @@ function osvSeverity(vuln: any): Severity {
   return 'low'
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // TEST QUALITY
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runTestQualityChecks(options: TypeScriptScanOptions): Promise<Finding[]> {
-  core.info('  → Test quality checks (assertion roulette, excessive mocking...)')
+  core.info('  -> Test quality checks (assertion roulette, excessive mocking...)')
   // Test quality checks are handled by the AST sidecar script
   // (assertion roulette, excessive mocking detection)
   return []
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // UTILITIES
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function runCommand(
   cmd: string,

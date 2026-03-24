@@ -6,7 +6,7 @@ import { Finding } from '@refract/core'
 
 /**
  * Note: This module uses @actions/exec which calls child_process.execFile()
- * internally with argument arrays — no shell interpretation, no injection risk.
+ * internally with argument arrays -- no shell interpretation, no injection risk.
  */
 
 const GITLEAKS_REPORT = '/tmp/gitleaks_global.json'
@@ -37,7 +37,7 @@ export async function runGitleaks(
 }
 
 async function runGitleaksGlobal(workspacePath: string): Promise<Finding[]> {
-  core.info('  → Running gitleaks (global, single pass)...')
+  core.info('  -> Running gitleaks (global, single pass)...')
 
   let stdout = ''
   let stderr = ''
@@ -88,7 +88,7 @@ async function runGitleaksGlobal(workspacePath: string): Promise<Finding[]> {
     })
   }
 
-  core.info(`  → gitleaks found ${findings.length} secrets globally`)
+  core.info(`  -> gitleaks found ${findings.length} secrets globally`)
   return findings
 }
 

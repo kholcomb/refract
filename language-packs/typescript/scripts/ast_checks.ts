@@ -9,7 +9,7 @@
  *   - Excessive mocking (>5 jest.mock() calls in a single test file)
  *   - God class (class with >15 methods)
  *
- * Uses @typescript-eslint/typescript-estree (BSD-2-Clause — safe to monetize)
+ * Uses @typescript-eslint/typescript-estree (BSD-2-Clause -- safe to monetize)
  */
 
 import { parse, AST_NODE_TYPES, TSESTree } from '@typescript-eslint/typescript-estree'
@@ -57,9 +57,9 @@ const SKIP_DIRS = new Set([
 
 const JS_TS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // AST Checkers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function checkDeepNesting(
   ast: TSESTree.Program,
@@ -200,7 +200,7 @@ function checkMagicNumbers(
       line_end: node.loc.start.line,
       language: lang,
       language_pack: PACK_VERSION,
-      message: `Magic number \`${node.value}\` — unexplained numeric literal makes intent unclear.`,
+      message: `Magic number \`${node.value}\` -- unexplained numeric literal makes intent unclear.`,
       remediation: `Extract to a named constant: \`const THRESHOLD = ${node.value}\` and reference it by name.`,
       effort: 'minutes',
       tool: 'ast-checker',
@@ -260,7 +260,7 @@ function checkAssertionRoulette(
         line_end: node.loc.end.line,
         language: lang,
         language_pack: PACK_VERSION,
-        message: `Trivial assertion \`expect(${expectArg.raw}).${method.name}(${arg.raw})\` always passes — this tests nothing.`,
+        message: `Trivial assertion \`expect(${expectArg.raw}).${method.name}(${arg.raw})\` always passes -- this tests nothing.`,
         remediation: 'Replace with a meaningful assertion that tests actual behavior: `expect(result).toBe(expectedValue)`.',
         effort: 'minutes',
         tool: 'ast-checker',
@@ -393,7 +393,7 @@ function checkAnyTypeAbuse(
   const now = new Date().toISOString()
   const lang = inferLang(filePath)
 
-  // Skip .js files — they don't have type annotations
+  // Skip .js files -- they don't have type annotations
   if (lang === 'javascript') return findings
 
   let anyCount = 0
@@ -540,9 +540,9 @@ function checkCallbackHell(
   return findings
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // AST Walking Utility
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function walkAST(
   node: TSESTree.Node,
@@ -575,9 +575,9 @@ function getFunctionName(node: TSESTree.Node): string {
   return '<anonymous>'
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // File Scanner
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function scanFile(filePath: string, repoRoot: string): Finding[] {
   let source: string
@@ -643,9 +643,9 @@ function scanDirectory(root: string, ignorePrefixes: string[]): Finding[] {
   return findings
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // CLI Entrypoint
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function main(): void {
   const args = process.argv.slice(2)
@@ -670,7 +670,7 @@ function main(): void {
 
   const result = { findings, count: findings.length }
   fs.writeFileSync(outputPath, JSON.stringify(result, null, 2))
-  console.log(`TS/JS AST checker found ${findings.length} findings → ${outputPath}`)
+  console.log(`TS/JS AST checker found ${findings.length} findings -> ${outputPath}`)
 }
 
 main()

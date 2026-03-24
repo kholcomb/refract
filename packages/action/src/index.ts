@@ -17,7 +17,7 @@ async function run(): Promise<void> {
   const startTime = Date.now()
 
   try {
-    // ── Read inputs ──────────────────────────────────────────────────────────
+    // --- Read inputs ---
     const token           = core.getInput('github_token', { required: true })
     const languagesInput  = core.getInput('languages')
     const categoriesInput = core.getInput('categories')
@@ -38,15 +38,15 @@ async function run(): Promise<void> {
 
     const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd()
 
-    core.info(`🔍 Anti-pattern detector starting...`)
+    core.info(`[scan] Anti-pattern detector starting...`)
     core.info(`   Workspace: ${workspace}`)
     core.info(`   Categories: ${categories.join(', ')}`)
 
-    // ── Detect languages ─────────────────────────────────────────────────────
+    // --- Detect languages ---
     let languagesToScan: string[]
 
     if (languagesInput === 'auto') {
-      core.info('🔎 Auto-detecting languages...')
+      core.info('[detect] Auto-detecting languages...')
       const detected = await detectLanguages(workspace, pathsIgnore)
       languagesToScan = detected.map(d => d.language)
       core.info(`   Detected: ${detected.map(d => `${d.language} (${d.fileCount} files)`).join(', ')}`)
@@ -62,12 +62,12 @@ async function run(): Promise<void> {
       languagesToScan = languagesInput.split(',').map(s => s.trim())
     }
 
-    // ── Run language packs ───────────────────────────────────────────────────
+    // --- Run language packs ---
     const allFindings: Finding[] = []
     const packsUsed: string[] = []
 
     for (const lang of languagesToScan) {
-      core.startGroup(`📦 Language pack: ${lang}`)
+      core.startGroup(`[pack] Language pack: ${lang}`)
 
       const scanOptions = {
         workspacePath: workspace,
@@ -90,7 +90,7 @@ async function run(): Promise<void> {
             break
 
           default:
-            core.info(`  ℹ️  No pack available for '${lang}', skipping`)
+            core.info(`  [i]  No pack available for '${lang}', skipping`)
         }
       } catch (e: any) {
         core.warning(`Language pack '${lang}' failed: ${e.message}`)
@@ -99,15 +99,15 @@ async function run(): Promise<void> {
       core.endGroup()
     }
 
-    // ── Filter by severity threshold ─────────────────────────────────────────
+    // --- Filter by severity threshold ---
     const thresholdIndex = SEVERITY_ORDER.indexOf(severityThresh)
     const filteredFindings = allFindings.filter(
       f => SEVERITY_ORDER.indexOf(f.severity) <= thresholdIndex
     )
 
-    core.info(`📊 Total findings: ${allFindings.length} (${filteredFindings.length} above threshold)`)
+    core.info(`[stats] Total findings: ${allFindings.length} (${filteredFindings.length} above threshold)`)
 
-    // ── Build result ─────────────────────────────────────────────────────────
+    // --- Build result ---
     const scanDuration = Date.now() - startTime
     const ctx = github.context
 
@@ -129,12 +129,12 @@ async function run(): Promise<void> {
     const summary = buildSummary(filteredFindings)
     const result: ScanResult = { meta, findings: filteredFindings, summary }
 
-    // ── Write JSON report ─────────────────────────────────────────────────────
+    // --- Write JSON report ---
     const reportPath = '/tmp/antipattern-report.json'
     fs.writeFileSync(reportPath, JSON.stringify(result, null, 2))
-    core.info(`📄 Report written to ${reportPath}`)
+    core.info(`[report] Report written to ${reportPath}`)
 
-    // ── Outputs ───────────────────────────────────────────────────────────────
+    // --- Outputs ---
     const outputter = new GitHubOutputter(token)
 
     if (stepSummary) {
@@ -142,14 +142,14 @@ async function run(): Promise<void> {
     }
 
     if (createIssues && filteredFindings.length > 0) {
-      core.startGroup('📋 Creating GitHub Issues')
+      core.startGroup('[issues] Creating GitHub Issues')
       const existingTitles = await outputter.getExistingIssueTitles(issueLabel)
       await outputter.createIssues(filteredFindings, issueLabel, existingTitles)
       core.endGroup()
     }
 
     if (prComments && filteredFindings.length > 0) {
-      core.startGroup('💬 Posting PR comments')
+      core.startGroup('[comments] Posting PR comments')
       await outputter.postPRComments(filteredFindings)
       core.endGroup()
     }
@@ -158,13 +158,13 @@ async function run(): Promise<void> {
       await outputter.notifySlack(slackWebhook, result)
     }
 
-    // ── Set action outputs ────────────────────────────────────────────────────
+    // --- Set action outputs ---
     core.setOutput('findings_count', filteredFindings.length)
     core.setOutput('critical_count', summary.by_severity.critical ?? 0)
     core.setOutput('high_count', summary.by_severity.high ?? 0)
     core.setOutput('report_path', reportPath)
 
-    // ── Fail check ────────────────────────────────────────────────────────────
+    // --- Fail check ---
     if (failOnSeverity !== 'none') {
       const failThresholdIndex = SEVERITY_ORDER.indexOf(failOnSeverity as Severity)
       const blockingFindings = filteredFindings.filter(
@@ -173,14 +173,14 @@ async function run(): Promise<void> {
 
       if (blockingFindings.length > 0) {
         core.setFailed(
-          `❌ ${blockingFindings.length} finding(s) at or above '${failOnSeverity}' severity. ` +
+          `[fail] ${blockingFindings.length} finding(s) at or above '${failOnSeverity}' severity. ` +
           `See step summary or GitHub Issues for details.`
         )
         return
       }
     }
 
-    core.info(`✅ Scan complete. ${filteredFindings.length} findings reported.`)
+    core.info(`[ok] Scan complete. ${filteredFindings.length} findings reported.`)
 
   } catch (error: any) {
     core.setFailed(`Action failed: ${error.message}`)

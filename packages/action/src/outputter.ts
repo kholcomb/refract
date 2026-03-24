@@ -3,11 +3,11 @@ import * as github from '@actions/github'
 import { Finding, ScanResult, Severity, bySeverity } from '@refract/core'
 
 const SEVERITY_EMOJI: Record<Severity, string> = {
-  critical: '🔴',
-  high:     '🟠',
-  medium:   '🟡',
-  low:      '🔵',
-  info:     '⚪',
+  critical: '[crit]',
+  high:     '[high]',
+  medium:   '[med]',
+  low:      '[low]',
+  info:     '[info]',
 }
 
 const SEVERITY_LABEL_COLOR: Record<Severity, string> = {
@@ -19,10 +19,10 @@ const SEVERITY_LABEL_COLOR: Record<Severity, string> = {
 }
 
 const EFFORT_EMOJI: Record<string, string> = {
-  minutes: '⚡',
-  hours:   '🕐',
-  days:    '📅',
-  weeks:   '🗓️',
+  minutes: '[fast]',
+  hours:   '[hrs]',
+  days:    '[days]',
+  weeks:   '[wks]',
 }
 
 export class GitHubOutputter {
@@ -35,13 +35,13 @@ export class GitHubOutputter {
     this.octokit = github.getOctokit(token)
   }
 
-  // ── Step Summary ───────────────────────────────────────────────────────────
+  // --- Step Summary ---
 
   async writeStepSummary(result: ScanResult): Promise<void> {
     const { findings, summary, meta } = result
 
     const lines: string[] = [
-      `# 🔍 Anti-Pattern Scan Results`,
+      `# [scan] Anti-Pattern Scan Results`,
       ``,
       `**Repo:** \`${meta.repo}\` | **Commit:** \`${meta.sha.substring(0, 7)}\` | **Duration:** ${(meta.scan_duration_ms / 1000).toFixed(1)}s`,
       ``,
@@ -59,7 +59,7 @@ export class GitHubOutputter {
     ]
 
     if (findings.length === 0) {
-      lines.push(`## ✅ No anti-patterns found above threshold!`)
+      lines.push(`## [ok] No anti-patterns found above threshold!`)
     } else {
       lines.push(`## Findings by Category`)
       lines.push(``)
@@ -88,7 +88,7 @@ export class GitHubOutputter {
 
       for (const f of topFindings) {
         lines.push(`<details>`)
-        lines.push(`<summary>${SEVERITY_EMOJI[f.severity]} <strong>${f.antipattern_name}</strong> — \`${f.file}:${f.line_start}\`</summary>`)
+        lines.push(`<summary>${SEVERITY_EMOJI[f.severity]} <strong>${f.antipattern_name}</strong> -- \`${f.file}:${f.line_start}\`</summary>`)
         lines.push(``)
         lines.push(`**Message:** ${f.message}`)
         lines.push(``)
@@ -106,10 +106,10 @@ export class GitHubOutputter {
     }
 
     await core.summary.addRaw(lines.join('\n')).write()
-    core.info('✅ Step summary written')
+    core.info('[ok] Step summary written')
   }
 
-  // ── GitHub Issues ──────────────────────────────────────────────────────────
+  // --- GitHub Issues ---
 
   async createIssues(
     findings: Finding[],
@@ -131,7 +131,7 @@ export class GitHubOutputter {
 
       // Deduplicate: skip if open issue with same title already exists
       if (existingIssues?.has(title)) {
-        core.info(`  ↩ Skipping duplicate issue: ${title}`)
+        core.info(`  [skip] Skipping duplicate issue: ${title}`)
         continue
       }
 
@@ -146,7 +146,7 @@ export class GitHubOutputter {
           labels: [label, representative.category, `severity:${representative.severity}`],
         })
         created++
-        core.info(`  ✅ Created issue: ${title}`)
+        core.info(`  [ok] Created issue: ${title}`)
 
         // Rate limit: GH allows ~30 issues/min via REST
         await sleep(2000)
@@ -155,7 +155,7 @@ export class GitHubOutputter {
       }
     }
 
-    core.info(`📋 Created ${created} GitHub Issues`)
+    core.info(`[issues] Created ${created} GitHub Issues`)
     return created
   }
 
@@ -176,7 +176,7 @@ export class GitHubOutputter {
     return titles
   }
 
-  // ── PR Inline Comments ─────────────────────────────────────────────────────
+  // --- PR Inline Comments ---
 
   async postPRComments(findings: Finding[]): Promise<void> {
     if (this.context.eventName !== 'pull_request') {
@@ -220,15 +220,15 @@ export class GitHubOutputter {
         })
         await sleep(500)
       } catch (e: any) {
-        // Line may not be in diff — that's okay
+        // Line may not be in diff -- that's okay
         core.debug(`Skipped PR comment on ${finding.file}:${finding.line_start}: ${e.message}`)
       }
     }
 
-    core.info(`💬 Posted PR inline comments for ${prFindings.length} findings`)
+    core.info(`[comments] Posted PR inline comments for ${prFindings.length} findings`)
   }
 
-  // ── Slack Notification ─────────────────────────────────────────────────────
+  // --- Slack Notification ---
 
   async notifySlack(webhookUrl: string, result: ScanResult): Promise<void> {
     const { summary, meta } = result
@@ -241,7 +241,7 @@ export class GitHubOutputter {
       blocks: [
         {
           type: 'header',
-          text: { type: 'plain_text', text: `🔍 Anti-Pattern Scan: ${meta.repo}` }
+          text: { type: 'plain_text', text: `[scan] Anti-Pattern Scan: ${meta.repo}` }
         },
         {
           type: 'section',
@@ -254,7 +254,7 @@ export class GitHubOutputter {
         },
         ...(critical > 0 ? [{
           type: 'section',
-          text: { type: 'mrkdwn', text: `🔴 *${critical} critical findings* require immediate attention.` }
+          text: { type: 'mrkdwn', text: `[crit] *${critical} critical findings* require immediate attention.` }
         }] : []),
         {
           type: 'actions',
@@ -277,25 +277,25 @@ export class GitHubOutputter {
     if (!response.ok) {
       core.warning(`Slack notification failed: ${response.status}`)
     } else {
-      core.info('📣 Slack notification sent')
+      core.info('[slack] Slack notification sent')
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // --- Helpers ---
 
   private async ensureLabel(name: string, color: string, description: string): Promise<void> {
     const { owner, repo } = this.context.repo
     try {
       await this.octokit.rest.issues.createLabel({ owner, repo, name, color, description })
     } catch {
-      // Label already exists — that's fine
+      // Label already exists -- that's fine
     }
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Template builders
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export function buildIssueBody(findings: Finding[], rep: Finding): string {
   const lines = [
@@ -311,7 +311,7 @@ export function buildIssueBody(findings: Finding[], rep: Finding): string {
   ]
 
   for (const f of findings) {
-    lines.push(`- [ ] [\`${f.file}:${f.line_start}\`](../../blob/HEAD/${f.file}#L${f.line_start}) — ${f.message}`)
+    lines.push(`- [ ] [\`${f.file}:${f.line_start}\`](../../blob/HEAD/${f.file}#L${f.line_start}) -- ${f.message}`)
   }
 
   lines.push(``, `### What is this anti-pattern?`, ``)
@@ -332,7 +332,7 @@ export function buildIssueBody(findings: Finding[], rep: Finding): string {
   }
 
   lines.push(``, `---`)
-  lines.push(`> 🤖 Auto-generated by [antipattern-detector](https://github.com/kholcomb/refract) · Rule: \`${rep.rule_id}\` · Pack: \`${rep.language_pack}\``)
+  lines.push(`> [bot] Auto-generated by [antipattern-detector](https://github.com/kholcomb/refract) - Rule: \`${rep.rule_id}\` - Pack: \`${rep.language_pack}\``)
 
   return lines.join('\n')
 }
@@ -343,15 +343,15 @@ export function buildPRCommentBody(f: Finding): string {
     ``,
     `${f.message}`,
     ``,
-    `**💡 Fix:** ${f.remediation}`,
+    `**[fix] Fix:** ${f.remediation}`,
     ``,
-    `\`${f.rule_id}\` · Confidence: ${(f.confidence * 100).toFixed(0)}% · ${EFFORT_EMOJI[f.effort]} ${f.effort} to fix`,
+    `\`${f.rule_id}\` - Confidence: ${(f.confidence * 100).toFixed(0)}% - ${EFFORT_EMOJI[f.effort]} ${f.effort} to fix`,
   ].join('\n')
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Utils
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export function groupBy<T>(arr: T[], key: (t: T) => string): Record<string, T[]> {
   return arr.reduce((acc, item) => {

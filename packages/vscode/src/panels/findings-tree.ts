@@ -10,7 +10,7 @@ const SEVERITY_ICON: Record<string, string> = {
   info:     'circle-outline',
 }
 
-// ── Tree item types ────────────────────────────────────────────────────────────
+// --- Tree item types ---
 
 class FileNode extends vscode.TreeItem {
   constructor(
@@ -40,12 +40,12 @@ class FindingNode extends vscode.TreeItem {
   constructor(public readonly finding: Finding) {
     super(finding.antipattern_name, vscode.TreeItemCollapsibleState.None)
 
-    this.description = `line ${finding.line_start} · ${finding.effort}`
+    this.description = `line ${finding.line_start} - ${finding.effort}`
     this.tooltip = new vscode.MarkdownString(
       `**${finding.antipattern_name}** \`${finding.severity}\`\n\n` +
       `${finding.message}\n\n` +
       `**Fix:** ${finding.remediation}\n\n` +
-      `*Confidence: ${(finding.confidence * 100).toFixed(0)}% · Rule: ${finding.rule_id}*`
+      `*Confidence: ${(finding.confidence * 100).toFixed(0)}% - Rule: ${finding.rule_id}*`
     )
     this.tooltip.isTrusted = true
 
@@ -54,7 +54,7 @@ class FindingNode extends vscode.TreeItem {
       new vscode.ThemeColor(severityColor(finding.severity))
     )
 
-    // Click → jump to the line in the editor
+    // Click -> jump to the line in the editor
     this.command = {
       command: 'vscode.open',
       title: 'Go to finding',
@@ -73,7 +73,7 @@ class FindingNode extends vscode.TreeItem {
   }
 }
 
-// ── Tree data provider ─────────────────────────────────────────────────────────
+// --- Tree data provider ---
 
 export class FindingsTreeProvider
   implements vscode.TreeDataProvider<vscode.TreeItem>
@@ -81,7 +81,7 @@ export class FindingsTreeProvider
   private _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined | void>()
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event
 
-  // file path → findings
+  // file path -> findings
   private findingsByFile = new Map<string, Finding[]>()
 
   updateFindings(filePath: string, findings: Finding[]): void {
@@ -115,7 +115,7 @@ export class FindingsTreeProvider
     // Root: list of files sorted by worst severity
     if (!element) {
       if (this.findingsByFile.size === 0) {
-        const empty = new vscode.TreeItem('No findings — looking clean ✅')
+        const empty = new vscode.TreeItem('No findings -- looking clean [ok]')
         empty.iconPath = new vscode.ThemeIcon('pass')
         return [empty]
       }
@@ -140,7 +140,7 @@ export class FindingsTreeProvider
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// --- Helpers ---
 
 function worstSeverityIndex(findings: Finding[]): number {
   return Math.min(...findings.map(f => SEVERITY_ORDER.indexOf(f.severity)))

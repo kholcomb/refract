@@ -65,9 +65,9 @@ export class SummaryPanel {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // HTML dashboard
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function buildHtml(findings: Finding[]): string {
   const bySeverity: Record<string, number> = {}
@@ -83,7 +83,7 @@ function buildHtml(findings: Finding[]): string {
     critical: '#f85149', high: '#e3b341', medium: '#d29922', low: '#58a6ff', info: '#8b949e'
   }
   const effortIcons: Record<string, string> = {
-    minutes: '⚡', hours: '🕐', days: '📅', weeks: '🗓️'
+    minutes: '[fast]', hours: '[hrs]', days: '[days]', weeks: '[wks]'
   }
 
   const findingCards = findings
@@ -99,17 +99,17 @@ function buildHtml(findings: Finding[]): string {
           <span class="finding-effort">${effortIcons[f.effort] ?? ''} ${f.effort}</span>
         </div>
         <div class="finding-location" onclick="jumpTo('${f.file.replace(/\\/g, '\\\\')}', ${f.line_start})">
-          📄 ${f.file}<span class="line-number">:${f.line_start}</span>
+          [report] ${f.file}<span class="line-number">:${f.line_start}</span>
         </div>
         <div class="finding-message">${escHtml(f.message)}</div>
         <details>
-          <summary>💡 Remediation</summary>
+          <summary>[fix] Remediation</summary>
           <div class="remediation">${escHtml(f.remediation)}</div>
         </details>
         <div class="finding-actions">
-          <button onclick="copyPrompt(${JSON.stringify(JSON.stringify(f))})">🤖 Copy AI Prompt</button>
-          <button onclick="showDiff(${JSON.stringify(JSON.stringify(f))})">⟷ Diff Preview</button>
-          <button onclick="openIssue(${JSON.stringify(JSON.stringify(f))})">📋 GitHub Issue</button>
+          <button onclick="copyPrompt(${JSON.stringify(JSON.stringify(f))})">[bot] Copy AI Prompt</button>
+          <button onclick="showDiff(${JSON.stringify(JSON.stringify(f))})">Diff Preview</button>
+          <button onclick="openIssue(${JSON.stringify(JSON.stringify(f))})">[issues] GitHub Issue</button>
         </div>
         <div class="finding-meta">
           <span class="tag">confidence: ${(f.confidence * 100).toFixed(0)}%</span>
@@ -243,7 +243,7 @@ function buildHtml(findings: Finding[]): string {
 </style>
 </head>
 <body>
-<h1>🔍 Anti-Pattern Findings</h1>
+<h1>[scan] Anti-Pattern Findings</h1>
 
 <div class="summary-row">
   ${severities.map(s => `
@@ -272,7 +272,7 @@ function buildHtml(findings: Finding[]): string {
 </div>
 
 ${findings.length === 0
-  ? `<div class="empty-state"><div class="icon">✅</div><div>No findings — save a file to scan</div></div>`
+  ? `<div class="empty-state"><div class="icon">[ok]</div><div>No findings -- save a file to scan</div></div>`
   : `<div class="findings-list" id="findingsList">${findingCards}</div>`
 }
 

@@ -10,7 +10,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { Finding } from '@refract/core'
 
-// ── Mock @actions/core and @actions/exec ─────────────────────────────────────
+// --- Mock @actions/core and @actions/exec ---
 // These must be set up before importing language packs, because the modules
 // capture references at import time.
 
@@ -52,10 +52,10 @@ jest.mock('@actions/exec', () => ({
       }
     }
 
-    // For tool installs (pip, npm) — skip silently
+    // For tool installs (pip, npm) -- skip silently
     if (cmd === 'pip' || cmd === 'npm') return 0
 
-    // For external tools (lizard, gitleaks, osv-scanner, bandit, pip-audit) — skip
+    // For external tools (lizard, gitleaks, osv-scanner, bandit, pip-audit) -- skip
     if (options?.ignoreReturnCode) return 1
     return 0
   }),
@@ -74,7 +74,7 @@ jest.mock('@actions/github', () => ({
   getOctokit: jest.fn(),
 }))
 
-// ── Required Finding fields ─────────────────────────────────────────────────
+// --- Required Finding fields ---
 
 const REQUIRED_FINDING_FIELDS: (keyof Finding)[] = [
   'id', 'antipattern', 'antipattern_name', 'category', 'severity',
@@ -105,7 +105,7 @@ function assertFindingSchema(finding: any, context: string): void {
   expect(finding.id.length).toBeGreaterThan(0)
 }
 
-// ── Tests ───────────────────────────────────────────────────────────────────
+// --- Tests ---
 
 describe('Integration: Python AST sidecar', () => {
   const fixtureDir = path.join(__dirname, 'fixtures/python')
@@ -209,7 +209,7 @@ describe('Integration: buildSummary round-trip', () => {
   })
 })
 
-describe('Integration: Finding → Issue body round-trip', () => {
+describe('Integration: Finding -> Issue body round-trip', () => {
   const { buildIssueBody } = require('../src/outputter')
 
   it('should produce valid markdown from real findings', () => {
