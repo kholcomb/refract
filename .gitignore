@@ -11,10 +11,9 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Build artifacts (action dist is committed -- required by GitHub Actions)
-packages/core/dist/
+# Build artifacts (action dist is auto-committed by CI via build-action.yml)
+**/dist/
 packages/core/tsconfig.tsbuildinfo
-packages/vscode/dist/
 
 # Tool caches
 .claude/

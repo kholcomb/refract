@@ -1,0 +1,58 @@
+name: Build Action
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/action/**'
+      - 'packages/core/**'
+      - 'language-packs/**'
+      - 'package.json'
+      - 'tsconfig.base.json'
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build:sidecars
+
+      - run: npm run build --workspace=packages/core
+
+      - run: npm run build --workspace=packages/action
+
+      - run: npm test --workspace=packages/action
+
+      - name: Commit dist bundle
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/action/dist/ --force
+          if git diff --cached --quiet; then
+            echo "No changes to dist/"
+          else
+            git commit -m "chore: rebuild action dist [skip ci]"
+            git push
+          fi
+
+      - name: Update major version tag
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          MAJOR=$(echo "$TAG" | grep -oE '^v[0-9]+')
+          git tag -fa "$MAJOR" -m "$MAJOR"
+          git push origin "$MAJOR" --force
