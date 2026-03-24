@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### GitHub Action (`@refract/action`)
+
 - Node20 GitHub Action with `@vercel/ncc` single-file bundle
 - Language auto-detection by file extension
 - Python language pack: AST checker (mutable defaults, bare excepts, exception sinks, wildcard imports, deep nesting, N+1 queries, magic numbers), lizard complexity, gitleaks secrets, bandit security, osv-scanner + pip-audit dependency scanning, pytest-cov coverage
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Containerized mode via Dockerfile (Node 20 + Python 3 + gitleaks + osv-scanner + bandit + lizard)
 
 #### VS Code Extension (`@refract/vscode`)
+
 - LSP server with persistent Node.js process and 500ms debounce on save
 - Per-file findings cache for instant tree view queries
 - Python file scanning via `ast_checks.py --single-file` sidecar
@@ -30,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ciParity` setting to match CI thresholds in the IDE
 
 #### Shared (`@refract/core`)
+
 - Unified `Finding` schema as the contract between all consumers
 - `Severity`, `AntipatternCategory`, `AntipatternId`, `EffortEstimate` types
 - `SEVERITY_ORDER` and `bySeverity` sort utilities
@@ -38,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `getActionRoot()` for correct sidecar path resolution after ncc bundling
 
 #### Infrastructure
+
 - npm workspaces monorepo (`packages/core`, `packages/action`, `packages/vscode`)
 - Externalized threshold configs in `language-packs/*/config/thresholds.yml`
 - Repo-level threshold overrides via `.antipattern-thresholds.yml`
