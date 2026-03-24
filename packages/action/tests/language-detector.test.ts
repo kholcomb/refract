@@ -59,9 +59,16 @@ describe('detectLanguages', () => {
   })
 
   it('should mark languages without packs as unavailable', async () => {
-    touch('main.go')
+    touch('main.rs')  // Rust has no pack yet
     const result = await detectLanguages(tmpDir, [])
     expect(result[0].packAvailable).toBe(false)
+  })
+
+  it('should detect Go as having a pack', async () => {
+    touch('main.go')
+    const result = await detectLanguages(tmpDir, [])
+    expect(result[0].language).toBe('go')
+    expect(result[0].packAvailable).toBe(true)
   })
 
   it('should return empty array for empty directory', async () => {

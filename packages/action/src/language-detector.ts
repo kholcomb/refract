@@ -23,7 +23,7 @@ const EXTENSION_MAP: Record<string, string> = {
   '.kt': 'kotlin',
 }
 
-const AVAILABLE_PACKS = new Set(['python', 'typescript', 'javascript'])
+const AVAILABLE_PACKS = new Set(['python', 'typescript', 'javascript', 'go'])
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', '.venv', 'venv', 'env', '__pycache__',

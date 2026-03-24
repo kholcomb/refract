@@ -5,6 +5,7 @@ import * as path from 'path'
 import { detectLanguages } from './language-detector'
 import { scanPython } from './language-packs/python'
 import { scanTypeScript } from './language-packs/typescript'
+import { scanGo } from './language-packs/go'
 import { GitHubOutputter } from './outputter'
 import {
   Finding, ScanResult, ScanSummary, ScanMeta,
@@ -87,6 +88,11 @@ async function run(): Promise<void> {
           case 'javascript':
             allFindings.push(...await scanTypeScript(scanOptions))
             packsUsed.push('typescript_v1')
+            break
+
+          case 'go':
+            allFindings.push(...await scanGo(scanOptions))
+            packsUsed.push('go_v1')
             break
 
           default:

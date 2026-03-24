@@ -1,0 +1,17 @@
+# Go language pack thresholds
+# Override in your repo with .antipattern-thresholds.yml
+
+code_structure:
+  max_cyclomatic_complexity: 10
+  max_function_length: 50
+  max_nesting_depth: 5
+  god_struct_method_count: 15
+  magic_number_allowed: [0, 1, -1, 2, 100]
+  max_interface_methods: 5
+  cognitive_complexity_threshold: 20
+
+security:
+  gosec_severity_level: medium
+
+test_quality:
+  min_coverage_percent: 50

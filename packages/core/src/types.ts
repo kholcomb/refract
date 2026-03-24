@@ -62,6 +62,13 @@ export type AntipatternId =
   | 'any_type_abuse'
   | 'ts_ignore_proliferation'
   | 'callback_hell'
+  // Go-specific
+  | 'error_not_checked'
+  | 'bare_goroutine'
+  | 'empty_interface_abuse'
+  | 'context_not_first_param'
+  | 'large_interface'
+  | 'init_side_effects'
   | string; // extensible
 
 export interface Finding {
