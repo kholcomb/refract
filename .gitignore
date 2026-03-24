@@ -26,3 +26,4 @@ packages/core/src/*.d.ts.map
 
 # Tool caches
 .claude/
+__pycache__/
