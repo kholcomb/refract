@@ -1,0 +1,101 @@
+name: Anti-Pattern Detection
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Full scan every Monday at 9am UTC
+    - cron: '0 9 * * 1'
+
+jobs:
+  antipattern-scan:
+    name: Detect Anti-Patterns
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write          # needed to create GitHub Issues
+      pull-requests: write   # needed for PR inline comments
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # full history helps with git-based checks
+
+      - name: Run Anti-Pattern Detector
+        id: scan
+        uses: your-org/antipattern-detector@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Language detection (auto = inspect the repo)
+          languages: auto
+
+          # Which categories to scan
+          categories: code_structure,security,dependencies,test_quality
+
+          # Only report medium and above
+          severity_threshold: medium
+
+          # Fail the build if any HIGH or CRITICAL findings
+          fail_on_severity: high
+
+          # Create a GitHub Issue for each unique finding
+          create_issues: true
+
+          # Post inline comments on PR diffs (critical/high only)
+          pr_comments: true
+
+          # Write to the Actions step summary tab
+          step_summary: true
+
+          # Optional: notify Slack
+          slack_webhook_url: ${{ secrets.SLACK_ANTIPATTERN_WEBHOOK }}
+
+          # Label applied to all created issues
+          issue_label: antipattern
+
+          # Minimum confidence to surface a finding (0.0-1.0)
+          confidence_threshold: '0.7'
+
+          # Paths to ignore (comma-separated glob prefixes)
+          paths_ignore: 'tests/fixtures,vendor,migrations'
+
+      # Use outputs downstream (e.g. in AI agent jobs)
+      - name: Log scan results
+        run: |
+          echo "Total findings: ${{ steps.scan.outputs.findings_count }}"
+          echo "Critical: ${{ steps.scan.outputs.critical_count }}"
+          echo "High: ${{ steps.scan.outputs.high_count }}"
+
+      # Upload the full JSON report as an artifact for AI agent consumption
+      - name: Upload findings report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: antipattern-report
+          path: ${{ steps.scan.outputs.report_path }}
+          retention-days: 30
+
+      # Example: trigger an AI remediation agent on critical findings
+      - name: Trigger AI remediation agent
+        if: steps.scan.outputs.critical_count > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = require('${{ steps.scan.outputs.report_path }}')
+            const criticalFindings = report.findings.filter(f => f.severity === 'critical')
+
+            // Dispatch to your AI agent workflow with the structured findings
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ai-remediation-agent.yml',
+              ref: context.ref,
+              inputs: {
+                findings_json: JSON.stringify(criticalFindings),
+                run_id: '${{ github.run_id }}',
+              }
+            })

@@ -1,0 +1,82 @@
+name: 'Antipattern Detector'
+description: 'Detects code anti-patterns across languages and creates actionable GitHub issues and PR comments'
+author: 'your-org'
+
+branding:
+  icon: 'alert-triangle'
+  color: 'orange'
+
+inputs:
+  github_token:
+    description: 'GitHub token for creating issues and PR comments'
+    required: true
+    default: ${{ github.token }}
+
+  languages:
+    description: 'Comma-separated list of languages to scan (auto-detected if not set)'
+    required: false
+    default: 'auto'
+
+  categories:
+    description: 'Comma-separated anti-pattern categories: code_structure,security,dependencies,test_quality'
+    required: false
+    default: 'code_structure,security,dependencies,test_quality'
+
+  severity_threshold:
+    description: 'Minimum severity to report: low, medium, high, critical'
+    required: false
+    default: 'medium'
+
+  fail_on_severity:
+    description: 'Fail the build if findings at or above this severity exist: low, medium, high, critical, none'
+    required: false
+    default: 'high'
+
+  create_issues:
+    description: 'Create GitHub Issues for each finding'
+    required: false
+    default: 'true'
+
+  pr_comments:
+    description: 'Post inline PR comments on specific lines'
+    required: false
+    default: 'true'
+
+  step_summary:
+    description: 'Write a summary to the GitHub Actions step summary'
+    required: false
+    default: 'true'
+
+  slack_webhook_url:
+    description: 'Slack webhook URL to post findings (optional)'
+    required: false
+    default: ''
+
+  issue_label:
+    description: 'Label to apply to created GitHub Issues'
+    required: false
+    default: 'antipattern'
+
+  confidence_threshold:
+    description: 'Minimum confidence score (0.0 - 1.0) to report a finding'
+    required: false
+    default: '0.7'
+
+  paths_ignore:
+    description: 'Comma-separated glob patterns to ignore (e.g. tests/**,vendor/**)'
+    required: false
+    default: ''
+
+outputs:
+  findings_count:
+    description: 'Total number of findings detected'
+  critical_count:
+    description: 'Number of critical severity findings'
+  high_count:
+    description: 'Number of high severity findings'
+  report_path:
+    description: 'Path to the full JSON findings report'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
