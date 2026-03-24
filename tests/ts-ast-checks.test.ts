@@ -74,6 +74,26 @@ describe('TypeScript AST Checker', () => {
     expect(mocking[0].file).toContain('assertion_roulette.test.ts')
   })
 
+  it('should detect any type abuse (>5 any annotations)', () => {
+    const anyAbuse = result.findings.filter(f => f.antipattern === 'any_type_abuse')
+    expect(anyAbuse.length).toBe(1)
+    expect(anyAbuse[0].category).toBe('code_structure')
+    expect(anyAbuse[0].file).toContain('any_abuse_fixture.ts')
+  })
+
+  it('should detect @ts-ignore proliferation (>3 directives)', () => {
+    const ignores = result.findings.filter(f => f.antipattern === 'ts_ignore_proliferation')
+    expect(ignores.length).toBe(1)
+    expect(ignores[0].confidence).toBe(0.95)
+    expect(ignores[0].file).toContain('any_abuse_fixture.ts')
+  })
+
+  it('should detect callback hell (>3 nested callbacks)', () => {
+    const callbacks = result.findings.filter(f => f.antipattern === 'callback_hell')
+    expect(callbacks.length).toBeGreaterThanOrEqual(1)
+    expect(callbacks[0].category).toBe('code_structure')
+  })
+
   it('should include all required Finding fields', () => {
     const required = [
       'id', 'antipattern', 'antipattern_name', 'category', 'severity',

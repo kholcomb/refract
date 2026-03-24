@@ -58,6 +58,10 @@ export type AntipatternId =
   | 'wildcard_import'
   | 'circular_import'
   | 'n_plus_one_query'
+  // TypeScript/JavaScript-specific
+  | 'any_type_abuse'
+  | 'ts_ignore_proliferation'
+  | 'callback_hell'
   | string; // extensible
 
 export interface Finding {

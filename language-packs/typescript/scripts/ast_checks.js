@@ -348,6 +348,135 @@ function checkGodClass(ast, filePath, sourceLines) {
     });
     return findings;
 }
+function checkAnyTypeAbuse(ast, filePath, sourceLines) {
+    const findings = [];
+    const now = new Date().toISOString();
+    const lang = inferLang(filePath);
+    // Skip .js files — they don't have type annotations
+    if (lang === 'javascript')
+        return findings;
+    let anyCount = 0;
+    const anyLocations = [];
+    walkAST(ast, (node) => {
+        // Explicit `: any` type annotation
+        if (node.type === typescript_estree_1.AST_NODE_TYPES.TSAnyKeyword) {
+            anyCount++;
+            anyLocations.push(node.loc.start.line);
+        }
+    });
+    if (anyCount > 5) {
+        findings.push({
+            id: makeId(),
+            antipattern: 'any_type_abuse',
+            antipattern_name: 'Excessive `any` Type Usage',
+            category: 'code_structure',
+            severity: anyCount > 15 ? 'high' : 'medium',
+            confidence: 0.9,
+            file: filePath,
+            line_start: anyLocations[0] ?? 1,
+            line_end: anyLocations[anyLocations.length - 1] ?? 1,
+            language: lang,
+            language_pack: PACK_VERSION,
+            message: `File has ${anyCount} explicit \`any\` type annotations. This defeats TypeScript's type safety and hides bugs.`,
+            remediation: 'Replace `any` with specific types, `unknown` (for truly unknown types), or generic type parameters. Use `any` only at FFI boundaries with untyped libraries.',
+            effort: anyCount > 15 ? 'days' : 'hours',
+            tool: 'ast-checker',
+            rule_id: 'ts/any-type-abuse',
+            references: ['https://www.typescriptlang.org/docs/handbook/2/types-from-types.html'],
+            tags: ['type-safety', 'maintainability'],
+            detected_at: now,
+        });
+    }
+    return findings;
+}
+function checkTsIgnoreProliferation(ast, filePath, sourceLines) {
+    const findings = [];
+    const now = new Date().toISOString();
+    const lang = inferLang(filePath);
+    // Scan source lines for @ts-ignore and @ts-expect-error comments
+    let ignoreCount = 0;
+    const ignoreLocations = [];
+    for (let i = 0; i < sourceLines.length; i++) {
+        const line = sourceLines[i];
+        if (line.includes('@ts-ignore') || line.includes('@ts-expect-error')) {
+            ignoreCount++;
+            ignoreLocations.push(i + 1); // 1-indexed
+        }
+    }
+    if (ignoreCount > 3) {
+        findings.push({
+            id: makeId(),
+            antipattern: 'ts_ignore_proliferation',
+            antipattern_name: '@ts-ignore Proliferation',
+            category: 'code_structure',
+            severity: ignoreCount > 10 ? 'high' : 'medium',
+            confidence: 0.95,
+            file: filePath,
+            line_start: ignoreLocations[0] ?? 1,
+            line_end: ignoreLocations[ignoreLocations.length - 1] ?? 1,
+            language: lang,
+            language_pack: PACK_VERSION,
+            message: `File has ${ignoreCount} @ts-ignore/@ts-expect-error directives. Each one silences a type error that may indicate a real bug.`,
+            remediation: 'Fix the underlying type errors instead of suppressing them. If suppression is truly needed, prefer @ts-expect-error (which fails when the error is fixed) over @ts-ignore.',
+            effort: 'hours',
+            tool: 'ast-checker',
+            rule_id: 'ts/ts-ignore-proliferation',
+            tags: ['type-safety', 'maintainability'],
+            detected_at: now,
+        });
+    }
+    return findings;
+}
+function checkCallbackHell(ast, filePath, sourceLines) {
+    const findings = [];
+    const now = new Date().toISOString();
+    const lang = inferLang(filePath);
+    // Detect deeply nested callbacks: function expressions or arrow functions
+    // passed as arguments to calls, nested >3 levels deep.
+    const CALLBACK_TYPES = new Set([
+        typescript_estree_1.AST_NODE_TYPES.FunctionExpression,
+        typescript_estree_1.AST_NODE_TYPES.ArrowFunctionExpression,
+    ]);
+    walkAST(ast, (node, ancestors) => {
+        if (!CALLBACK_TYPES.has(node.type))
+            return;
+        // Count how many ancestor callbacks this is nested within
+        let callbackDepth = 0;
+        for (const ancestor of ancestors) {
+            if (CALLBACK_TYPES.has(ancestor.type)) {
+                // Only count if the ancestor was passed as a call argument
+                const parent = ancestors[ancestors.indexOf(ancestor) - 1];
+                if (parent?.type === typescript_estree_1.AST_NODE_TYPES.CallExpression) {
+                    callbackDepth++;
+                }
+            }
+        }
+        if (callbackDepth >= 3) {
+            findings.push({
+                id: makeId(),
+                antipattern: 'callback_hell',
+                antipattern_name: 'Callback Hell',
+                category: 'code_structure',
+                severity: callbackDepth >= 5 ? 'high' : 'medium',
+                confidence: 0.85,
+                file: filePath,
+                line_start: node.loc.start.line,
+                line_end: node.loc.end.line,
+                language: lang,
+                language_pack: PACK_VERSION,
+                message: `Callback nested ${callbackDepth} levels deep. Deeply nested callbacks make code hard to read, debug, and test.`,
+                remediation: 'Refactor using async/await, Promise chains, or extract named functions to flatten the nesting.',
+                effort: 'hours',
+                tool: 'ast-checker',
+                rule_id: 'ts/callback-hell',
+                references: ['http://callbackhell.com/'],
+                tags: ['readability', 'maintainability', 'async'],
+                detected_at: now,
+            });
+        }
+    });
+    return findings;
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // AST Walking Utility
 // ─────────────────────────────────────────────────────────────────────────────
@@ -410,6 +539,9 @@ function scanFile(filePath, repoRoot) {
         ...checkAssertionRoulette(ast, relPath, sourceLines),
         ...checkExcessiveMocking(ast, relPath, sourceLines),
         ...checkGodClass(ast, relPath, sourceLines),
+        ...checkAnyTypeAbuse(ast, relPath, sourceLines),
+        ...checkTsIgnoreProliferation(ast, relPath, sourceLines),
+        ...checkCallbackHell(ast, relPath, sourceLines),
     ];
 }
 function scanDirectory(root, ignorePrefixes) {
