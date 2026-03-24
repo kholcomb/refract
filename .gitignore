@@ -13,7 +13,9 @@ Thumbs.db
 
 # Build artifacts (action dist is auto-committed by CI via build-action.yml)
 **/dist/
+**/lib/
 packages/core/tsconfig.tsbuildinfo
+packages/action/tsconfig.tsbuildinfo
 
 # Tool caches
 .claude/

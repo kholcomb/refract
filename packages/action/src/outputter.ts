@@ -64,8 +64,8 @@ export class GitHubOutputter {
       lines.push(`## Findings by Category`)
       lines.push(``)
 
-      const byCategory = groupBy(findings, f => f.category)
-      for (const [category, catFindings] of Object.entries(byCategory)) {
+      const byCategory: Record<string, Finding[]> = groupBy(findings, f => f.category)
+      for (const [category, catFindings] of Object.entries(byCategory) as [string, Finding[]][]) {
         lines.push(`### ${formatCategory(category)} (${catFindings.length})`)
         lines.push(``)
         lines.push(`| Severity | Anti-Pattern | File | Line | Effort |`)
@@ -123,9 +123,9 @@ export class GitHubOutputter {
     await this.ensureLabel(label, 'D93F0B', 'Anti-pattern detected by automated scan')
 
     // Group findings into single issues per antipattern+file to avoid noise
-    const groups = groupBy(findings, f => `${f.antipattern}::${f.file}`)
+    const groups: Record<string, Finding[]> = groupBy(findings, f => `${f.antipattern}::${f.file}`)
 
-    for (const [key, group] of Object.entries(groups)) {
+    for (const [key, group] of Object.entries(groups) as [string, Finding[]][]) {
       const representative = group[0]
       const title = `[${representative.severity.toUpperCase()}] ${representative.antipattern_name} in \`${representative.file}\``
 
