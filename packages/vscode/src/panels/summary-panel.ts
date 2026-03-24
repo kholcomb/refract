@@ -107,9 +107,9 @@ function buildHtml(findings: Finding[]): string {
           <div class="remediation">${escHtml(f.remediation)}</div>
         </details>
         <div class="finding-actions">
-          <button onclick="copyPrompt(${JSON.stringify(JSON.stringify(f))})">[bot] Copy AI Prompt</button>
-          <button onclick="showDiff(${JSON.stringify(JSON.stringify(f))})">Diff Preview</button>
-          <button onclick="openIssue(${JSON.stringify(JSON.stringify(f))})">[issues] GitHub Issue</button>
+          <button data-action="copyPrompt" data-idx="${findings.indexOf(f)}">[bot] Copy AI Prompt</button>
+          <button data-action="showDiff" data-idx="${findings.indexOf(f)}">Diff Preview</button>
+          <button data-action="openIssue" data-idx="${findings.indexOf(f)}">[issues] GitHub Issue</button>
         </div>
         <div class="finding-meta">
           <span class="tag">confidence: ${(f.confidence * 100).toFixed(0)}%</span>
@@ -278,19 +278,22 @@ ${findings.length === 0
 
 <script>
   const vscode = acquireVsCodeApi()
+  const findings = ${JSON.stringify(findings)}
 
   function jumpTo(file, line) {
     vscode.postMessage({ command: 'jumpToLine', file, line })
   }
-  function copyPrompt(findingJson) {
-    vscode.postMessage({ command: 'copyPrompt', finding: JSON.parse(findingJson) })
-  }
-  function showDiff(findingJson) {
-    vscode.postMessage({ command: 'showDiff', finding: JSON.parse(findingJson) })
-  }
-  function openIssue(findingJson) {
-    vscode.postMessage({ command: 'openIssue', finding: JSON.parse(findingJson) })
-  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]')
+    if (!btn) return
+    const action = btn.dataset.action
+    const finding = findings[parseInt(btn.dataset.idx, 10)]
+    if (!finding) return
+    if (action === 'copyPrompt') vscode.postMessage({ command: 'copyPrompt', finding })
+    else if (action === 'showDiff') vscode.postMessage({ command: 'showDiff', finding })
+    else if (action === 'openIssue') vscode.postMessage({ command: 'openIssue', finding })
+  })
 
   function applyFilters() {
     const sev = document.getElementById('filterSeverity').value

@@ -74,7 +74,9 @@ class AntiPatternVisitor(ast.NodeVisitor):
     # --- Mutable default arguments ---
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self._check_mutable_defaults(node)
-        self._check_function_nesting(node)
+        # Nesting: only check if no nested function already reported for this scope
+        if not self._has_nested_nesting_report(node):
+            self._check_function_nesting(node)
         self.generic_visit(node)
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -112,54 +114,60 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 ))
 
     def _check_function_nesting(self, node):
-        """Detect deep nesting by counting nested control flow.
+        """Detect deep nesting and high cognitive complexity.
 
-        Improvements over naive depth counting:
-        - Threshold raised to 5 (depth 4 is extremely common in Python)
-        - elif chains don't increment depth (they're flat switch-like branches)
-        - Early exits (if ...: return/continue/break) don't increment depth
-        - Recursive functions get a +1 threshold bump (tree walkers nest naturally)
+        Nesting depth rules:
+        - Threshold: 5 (6 for recursive functions)
+        - elif/else don't increment depth (flat sibling branches)
+        - Early exits (if x: return/continue/break) don't increment depth
+        - try blocks don't increment depth (every I/O function uses try)
+
+        Cognitive complexity (inspired by SonarQube):
+        - Each nesting level adds an increment equal to the current depth
+        - Nested loops (for->for, while->for) score much higher than if->if
+        - break/continue to a label, recursion, and boolean sequences add cost
+        - Threshold: 15
         """
         is_recursive = self._is_recursive(node)
 
+        # --- Nesting depth ---
         class NestingCounter(ast.NodeVisitor):
             def __init__(self):
                 self.max_depth = 0
                 self.depth = 0
 
             def visit_If(self, if_node):
-                # Don't count early exits: `if x: return/continue/break`
                 if self._is_early_exit(if_node):
                     self.generic_visit(if_node)
                     return
-
                 self.depth += 1
                 self.max_depth = max(self.max_depth, self.depth)
-                # Visit the body
                 for child in if_node.body:
                     self.visit(child)
-                # elif/else: visit at the SAME depth (not incrementing)
+                # elif/else: visit at the SAME depth (sibling, not child)
                 for child in if_node.orelse:
                     self.visit(child)
                 self.depth -= 1
 
             def _is_early_exit(self, if_node):
-                """if ...: return / continue / break with no else."""
                 if if_node.orelse:
                     return False
                 if len(if_node.body) != 1:
                     return False
-                stmt = if_node.body[0]
-                return isinstance(stmt, (ast.Return, ast.Continue, ast.Break))
+                return isinstance(if_node.body[0], (ast.Return, ast.Continue, ast.Break))
 
-            def _enter(self, node):
+            def _enter_nesting(self, node):
                 self.depth += 1
                 self.max_depth = max(self.max_depth, self.depth)
                 self.generic_visit(node)
                 self.depth -= 1
 
-            visit_For = visit_While = visit_With = \
-            visit_Try = visit_AsyncFor = visit_AsyncWith = _enter
+            def _enter_no_depth(self, node):
+                """Visit children without incrementing depth (try/with)."""
+                self.generic_visit(node)
+
+            visit_For = visit_While = visit_AsyncFor = _enter_nesting
+            visit_Try = visit_With = visit_AsyncWith = _enter_no_depth
 
         counter = NestingCounter()
         counter.visit(node)
@@ -183,7 +191,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 remediation=(
                     "Reduce nesting by: (1) returning early on guard conditions, "
                     "(2) extracting nested blocks into helper functions, "
-                    "(3) using list comprehensions or generators instead of nested loops."
+                    "(3) using array methods or generators instead of nested loops."
                 ),
                 effort='hours',
                 tool='ast-checker',
@@ -192,8 +200,121 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 tags=['maintainability', 'readability'],
             ))
 
+        # --- Cognitive complexity ---
+        cog = self._cognitive_complexity(node)
+        if cog >= 15:
+            self.findings.append(Finding(
+                id=make_id(),
+                antipattern='high_cyclomatic_complexity',
+                antipattern_name='High Cognitive Complexity',
+                category='code_structure',
+                severity='medium' if cog < 25 else 'high',
+                confidence=0.9,
+                file=self.filepath,
+                line_start=node.lineno,
+                line_end=getattr(node, 'end_lineno', node.lineno),
+                language='python',
+                language_pack=PACK_VERSION,
+                message=f"Function '{node.name}' has cognitive complexity of {cog} "
+                        f"(threshold: 15). This function is hard to understand and test.",
+                remediation=(
+                    "Reduce complexity by extracting helper functions, flattening nested "
+                    "loops, using early returns, or simplifying boolean expressions."
+                ),
+                effort='hours',
+                tool='ast-checker',
+                rule_id='python/cognitive-complexity',
+                code_snippet=self._snippet(node),
+                references=['https://www.sonarsource.com/docs/CognitiveComplexity.pdf'],
+                tags=['maintainability', 'testability'],
+            ))
+
+    def _cognitive_complexity(self, func_node):
+        """Calculate cognitive complexity (SonarQube-inspired).
+
+        Rules:
+        - +1 for each: if, elif, else, for, while, except, and/or sequence,
+          break/continue (to a label), recursion
+        - Additional +1 per nesting level for: if, for, while, except
+          (these are harder to reason about when nested)
+        - No increment for: try (it's just error handling scaffolding),
+          with (context manager), early returns
+        """
+        score = 0
+        nesting = 0
+        func_name = func_node.name
+
+        def walk(node):
+            nonlocal score, nesting
+
+            if isinstance(node, ast.If):
+                score += 1 + nesting  # +1 base, +nesting for depth
+                for child in node.body:
+                    walk(child)
+                # elif is +1 but no nesting increment
+                for child in node.orelse:
+                    if isinstance(child, ast.If):
+                        score += 1  # elif: +1 flat (no nesting penalty)
+                        for c in child.body:
+                            walk(c)
+                        for c in child.orelse:
+                            walk(c)
+                    else:
+                        score += 1  # else: +1 flat
+                        walk(child)
+                return
+
+            if isinstance(node, (ast.For, ast.While, ast.AsyncFor)):
+                score += 1 + nesting
+                nesting += 1
+                for child in ast.iter_child_nodes(node):
+                    walk(child)
+                nesting -= 1
+                return
+
+            if isinstance(node, ast.ExceptHandler):
+                score += 1 + nesting
+                for child in ast.iter_child_nodes(node):
+                    walk(child)
+                return
+
+            if isinstance(node, ast.BoolOp):
+                # Sequence of and/or: +1 per operator
+                score += 1
+                for child in ast.iter_child_nodes(node):
+                    walk(child)
+                return
+
+            # Recursion: +1 per self-call
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == func_name:
+                    score += 1
+
+            for child in ast.iter_child_nodes(node):
+                walk(child)
+
+        for child in ast.iter_child_nodes(func_node):
+            walk(child)
+
+        return score
+
+    def _has_nested_nesting_report(self, node):
+        """Check if any nested function inside this one already has a nesting finding.
+        Only report the innermost function that exceeds the threshold."""
+        for child in ast.walk(node):
+            if child is node:
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Check if this inner function would trigger nesting
+                # by checking if we already have a finding for it
+                for f in self.findings:
+                    if (f.antipattern == 'deep_nesting'
+                            and f.line_start == child.lineno):
+                        return True
+        return False
+
     def _is_recursive(self, func_node):
-        """Check if a function calls itself (recursive)."""
+        """Check if a function calls itself."""
         func_name = func_node.name
         for node in ast.walk(func_node):
             if isinstance(node, ast.Call):
