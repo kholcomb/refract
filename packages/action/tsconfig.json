@@ -4,7 +4,11 @@
     "outDir": "lib",
     "rootDir": "src",
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "paths": {
+      "@refract/core": ["../core/src/index.ts"]
+    },
+    "baseUrl": "."
   },
   "include": ["src/**/*.ts"],
   "references": [

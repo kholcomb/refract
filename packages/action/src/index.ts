@@ -190,7 +190,7 @@ async function run(): Promise<void> {
 
 export function buildSummary(findings: Finding[]): ScanSummary {
   const bySev = Object.fromEntries(
-    SEVERITY_ORDER.map(s => [s, findings.filter(f => f.severity === s).length])
+    SEVERITY_ORDER.map((s: Severity) => [s, findings.filter((f: Finding) => f.severity === s).length])
   ) as Record<Severity, number>
 
   const byCat: Record<string, number> = {}

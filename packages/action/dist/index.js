@@ -35293,7 +35293,7 @@ const language_detector_1 = __nccwpck_require__(9840);
 const python_1 = __nccwpck_require__(2351);
 const typescript_1 = __nccwpck_require__(4838);
 const outputter_1 = __nccwpck_require__(7275);
-const core_1 = __nccwpck_require__(6808);
+const core_1 = __nccwpck_require__(5026);
 Object.defineProperty(exports, "SEVERITY_ORDER", ({ enumerable: true, get: function () { return core_1.SEVERITY_ORDER; } }));
 async function run() {
     const startTime = Date.now();
@@ -35435,7 +35435,7 @@ async function run() {
     }
 }
 function buildSummary(findings) {
-    const bySev = Object.fromEntries(core_1.SEVERITY_ORDER.map(s => [s, findings.filter(f => f.severity === s).length]));
+    const bySev = Object.fromEntries(core_1.SEVERITY_ORDER.map((s) => [s, findings.filter((f) => f.severity === s).length]));
     const byCat = {};
     const byLang = {};
     const files = new Set();
@@ -35606,7 +35606,7 @@ const core = __importStar(__nccwpck_require__(7184));
 const exec = __importStar(__nccwpck_require__(9192));
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
-const core_1 = __nccwpck_require__(6808);
+const core_1 = __nccwpck_require__(5026);
 const shared_scanners_1 = __nccwpck_require__(6960);
 const PACK_VERSION = 'python_v1';
 async function scanPython(options) {
@@ -35754,8 +35754,12 @@ async function runSecurityChecks(options) {
     // Bandit for Python-specific security issues (Apache 2.0)
     await exec.exec('pip', ['install', '--quiet', 'bandit'], { silent: true })
         .catch(() => core.warning('bandit install failed'));
-    await runCommand('bandit', ['-r', options.workspacePath, '-f', 'json', '-o', '/tmp/bandit.json',
-        '--severity-level', 'medium', '-q'], { ignoreReturnCode: true });
+    const banditArgs = ['-r', options.workspacePath, '-f', 'json', '-o', '/tmp/bandit.json',
+        '--severity-level', 'medium', '-q'];
+    if (options.ignorePaths.length > 0) {
+        banditArgs.push('--exclude', options.ignorePaths.map(p => path.join(options.workspacePath, p)).join(','));
+    }
+    await runCommand('bandit', banditArgs, { ignoreReturnCode: true });
     if (fs.existsSync('/tmp/bandit.json')) {
         const banditData = JSON.parse(fs.readFileSync('/tmp/bandit.json', 'utf-8'));
         findings.push(...parseBanditOutput(banditData, options.workspacePath));
@@ -36034,7 +36038,7 @@ const core = __importStar(__nccwpck_require__(7184));
 const exec = __importStar(__nccwpck_require__(9192));
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
-const core_1 = __nccwpck_require__(6808);
+const core_1 = __nccwpck_require__(5026);
 const shared_scanners_1 = __nccwpck_require__(6960);
 const PACK_VERSION = 'typescript_v1';
 async function scanTypeScript(options) {
@@ -36379,7 +36383,7 @@ exports.formatCategory = formatCategory;
 exports.truncate = truncate;
 const core = __importStar(__nccwpck_require__(7184));
 const github = __importStar(__nccwpck_require__(8064));
-const core_1 = __nccwpck_require__(6808);
+const core_1 = __nccwpck_require__(5026);
 const SEVERITY_EMOJI = {
     critical: '[crit]',
     high: '[high]',
@@ -36822,7 +36826,7 @@ function generateId() {
 
 /***/ }),
 
-/***/ 669:
+/***/ 5899:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36873,11 +36877,11 @@ const path = __importStar(__nccwpck_require__(6928));
 function getActionRoot() {
     return process.env.GITHUB_ACTION_PATH ?? path.join(__dirname, '..');
 }
-//# sourceMappingURL=action-root.js.map
+
 
 /***/ }),
 
-/***/ 6808:
+/***/ 5026:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36898,16 +36902,16 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getActionRoot = void 0;
-__exportStar(__nccwpck_require__(5117), exports);
-__exportStar(__nccwpck_require__(2541), exports);
-__exportStar(__nccwpck_require__(5226), exports);
-var action_root_1 = __nccwpck_require__(669);
+__exportStar(__nccwpck_require__(5875), exports);
+__exportStar(__nccwpck_require__(4171), exports);
+__exportStar(__nccwpck_require__(5592), exports);
+var action_root_1 = __nccwpck_require__(5899);
 Object.defineProperty(exports, "getActionRoot", ({ enumerable: true, get: function () { return action_root_1.getActionRoot; } }));
-//# sourceMappingURL=index.js.map
+
 
 /***/ }),
 
-/***/ 2541:
+/***/ 4171:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -36923,11 +36927,11 @@ function bySeverity(a, b) {
 function severityAtOrAbove(severity, threshold) {
     return exports.SEVERITY_ORDER.indexOf(severity) <= exports.SEVERITY_ORDER.indexOf(threshold);
 }
-//# sourceMappingURL=severity.js.map
+
 
 /***/ }),
 
-/***/ 5226:
+/***/ 5592:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36969,7 +36973,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.loadThresholds = loadThresholds;
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
-const action_root_1 = __nccwpck_require__(669);
+const action_root_1 = __nccwpck_require__(5899);
 const DEFAULT_THRESHOLDS = {
     code_structure: {
         max_cyclomatic_complexity: 10,
@@ -37063,11 +37067,11 @@ function parseYamlValue(raw) {
     // String
     return trimmed;
 }
-//# sourceMappingURL=thresholds.js.map
+
 
 /***/ }),
 
-/***/ 5117:
+/***/ 5875:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -37080,7 +37084,7 @@ function parseYamlValue(raw) {
  * This is the contract that downstream AI agents and issue trackers consume.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-//# sourceMappingURL=types.js.map
+
 
 /***/ }),
 

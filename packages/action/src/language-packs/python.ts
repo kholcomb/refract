@@ -192,12 +192,13 @@ async function runSecurityChecks(options: PythonScanOptions): Promise<Finding[]>
   await exec.exec('pip', ['install', '--quiet', 'bandit'], { silent: true })
     .catch(() => core.warning('bandit install failed'))
 
-  await runCommand(
-    'bandit',
-    ['-r', options.workspacePath, '-f', 'json', '-o', '/tmp/bandit.json',
-     '--severity-level', 'medium', '-q'],
-    { ignoreReturnCode: true }
-  )
+  const banditArgs = ['-r', options.workspacePath, '-f', 'json', '-o', '/tmp/bandit.json',
+     '--severity-level', 'medium', '-q']
+  if (options.ignorePaths.length > 0) {
+    banditArgs.push('--exclude', options.ignorePaths.map(p => path.join(options.workspacePath, p)).join(','))
+  }
+
+  await runCommand('bandit', banditArgs, { ignoreReturnCode: true })
 
   if (fs.existsSync('/tmp/bandit.json')) {
     const banditData = JSON.parse(fs.readFileSync('/tmp/bandit.json', 'utf-8'))
