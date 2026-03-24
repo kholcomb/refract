@@ -99,9 +99,14 @@ async function run(): Promise<void> {
       core.endGroup()
     }
 
+    // --- Filter by ignored paths (safety net for tools that don't support exclusion) ---
+    const pathFilteredFindings = pathsIgnore.length > 0
+      ? allFindings.filter(f => !pathsIgnore.some(p => f.file.startsWith(p)))
+      : allFindings
+
     // --- Filter by severity threshold ---
     const thresholdIndex = SEVERITY_ORDER.indexOf(severityThresh)
-    const filteredFindings = allFindings.filter(
+    const filteredFindings = pathFilteredFindings.filter(
       f => SEVERITY_ORDER.indexOf(f.severity) <= thresholdIndex
     )
 
