@@ -112,11 +112,45 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 ))
 
     def _check_function_nesting(self, node):
-        """Detect deep nesting by counting nested control flow."""
+        """Detect deep nesting by counting nested control flow.
+
+        Improvements over naive depth counting:
+        - Threshold raised to 5 (depth 4 is extremely common in Python)
+        - elif chains don't increment depth (they're flat switch-like branches)
+        - Early exits (if ...: return/continue/break) don't increment depth
+        - Recursive functions get a +1 threshold bump (tree walkers nest naturally)
+        """
+        is_recursive = self._is_recursive(node)
+
         class NestingCounter(ast.NodeVisitor):
             def __init__(self):
                 self.max_depth = 0
                 self.depth = 0
+
+            def visit_If(self, if_node):
+                # Don't count early exits: `if x: return/continue/break`
+                if self._is_early_exit(if_node):
+                    self.generic_visit(if_node)
+                    return
+
+                self.depth += 1
+                self.max_depth = max(self.max_depth, self.depth)
+                # Visit the body
+                for child in if_node.body:
+                    self.visit(child)
+                # elif/else: visit at the SAME depth (not incrementing)
+                for child in if_node.orelse:
+                    self.visit(child)
+                self.depth -= 1
+
+            def _is_early_exit(self, if_node):
+                """if ...: return / continue / break with no else."""
+                if if_node.orelse:
+                    return False
+                if len(if_node.body) != 1:
+                    return False
+                stmt = if_node.body[0]
+                return isinstance(stmt, (ast.Return, ast.Continue, ast.Break))
 
             def _enter(self, node):
                 self.depth += 1
@@ -124,27 +158,28 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 self.generic_visit(node)
                 self.depth -= 1
 
-            visit_If = visit_For = visit_While = visit_With = \
+            visit_For = visit_While = visit_With = \
             visit_Try = visit_AsyncFor = visit_AsyncWith = _enter
 
         counter = NestingCounter()
         counter.visit(node)
 
-        if counter.max_depth >= 4:
+        threshold = 6 if is_recursive else 5
+        if counter.max_depth >= threshold:
             self.findings.append(Finding(
                 id=make_id(),
                 antipattern='deep_nesting',
                 antipattern_name='Deep Nesting',
                 category='code_structure',
-                severity='medium' if counter.max_depth < 6 else 'high',
-                confidence=0.9,
+                severity='medium' if counter.max_depth < 7 else 'high',
+                confidence=0.85,
                 file=self.filepath,
                 line_start=node.lineno,
                 line_end=getattr(node, 'end_lineno', node.lineno),
                 language='python',
                 language_pack=PACK_VERSION,
                 message=f"Function '{node.name}' has nesting depth of {counter.max_depth} "
-                        f"(threshold: 4). Deep nesting makes code hard to read and test.",
+                        f"(threshold: {threshold}). Deep nesting makes code hard to read and test.",
                 remediation=(
                     "Reduce nesting by: (1) returning early on guard conditions, "
                     "(2) extracting nested blocks into helper functions, "
@@ -156,6 +191,17 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 code_snippet=self._snippet(node),
                 tags=['maintainability', 'readability'],
             ))
+
+    def _is_recursive(self, func_node):
+        """Check if a function calls itself (recursive)."""
+        func_name = func_node.name
+        for node in ast.walk(func_node):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == func_name:
+                    return True
+                if isinstance(node.func, ast.Attribute) and node.func.attr == func_name:
+                    return True
+        return False
 
     # --- Bare except ---
     def visit_ExceptHandler(self, node: ast.ExceptHandler):
@@ -251,17 +297,54 @@ class AntiPatternVisitor(ast.NodeVisitor):
 
     # --- N+1 query pattern (ORM loop) ---
     def visit_For(self, node: ast.For):
-        """Detect `.filter(`, `.get(`, `.all()` calls inside for loops."""
-        orm_methods = {'filter', 'get', 'all', 'first', 'last', 'count', 'exclude', 'select_related'}
+        """Detect ORM/database calls inside for loops.
+
+        Key heuristics to reduce false positives:
+        1. Only flag methods that look like ORM calls (keyword args like pk=, id=),
+           not dict.get(key, default) which takes positional string args.
+        2. Skip retry/polling loops: `for _ in range(...)` where the call target
+           doesn't vary with the loop variable.
+        3. Skip loops over in-memory data: if the iterable came from a local
+           .get() on a dict, the loop body is just transforming data.
+        """
+        # Skip retry/polling loops: `for _ in range(...)`
+        if self._is_retry_loop(node):
+            self.generic_visit(node)
+            return
+
+        # Methods that strongly indicate ORM/DB calls (not dict methods)
+        orm_methods = {'filter', 'exclude', 'select_related', 'prefetch_related',
+                       'values', 'values_list', 'annotate', 'aggregate',
+                       'create', 'bulk_create', 'delete'}
+        # Methods that are ambiguous -- only flag if they use keyword args (ORM style)
+        # dict.get("key", default) vs ORM.get(pk=1); dict.update({...}) vs QS.update(field=val)
+        ambiguous_methods = {'get', 'all', 'first', 'last', 'count', 'update'}
 
         class OrmCallFinder(ast.NodeVisitor):
             def __init__(self):
                 self.found = []
 
             def visit_Call(self, call_node):
-                if isinstance(call_node.func, ast.Attribute):
-                    if call_node.func.attr in orm_methods:
+                if not isinstance(call_node.func, ast.Attribute):
+                    self.generic_visit(call_node)
+                    return
+
+                method = call_node.func.attr
+
+                if method in orm_methods:
+                    self.found.append(call_node)
+                elif method in ambiguous_methods:
+                    # Distinguish ORM .get(pk=1) from dict .get("key", default)
+                    # ORM calls use keyword arguments; dict.get uses positional string args
+                    has_keyword_args = any(kw for kw in call_node.keywords)
+                    has_string_first_arg = (
+                        call_node.args
+                        and isinstance(call_node.args[0], ast.Constant)
+                        and isinstance(call_node.args[0].value, str)
+                    )
+                    if has_keyword_args and not has_string_first_arg:
                         self.found.append(call_node)
+
                 self.generic_visit(call_node)
 
         finder = OrmCallFinder()
@@ -269,20 +352,22 @@ class AntiPatternVisitor(ast.NodeVisitor):
             finder.visit(stmt)
 
         if finder.found:
+            call_names = list(set(c.func.attr for c in finder.found))
             self.findings.append(Finding(
                 id=make_id(),
                 antipattern='n_plus_one_query',
                 antipattern_name='N+1 Query Pattern',
                 category='code_structure',
                 severity='high',
-                confidence=0.75,
+                confidence=0.8,
                 file=self.filepath,
                 line_start=node.lineno,
                 line_end=getattr(node, 'end_lineno', node.lineno),
                 language='python',
                 language_pack=PACK_VERSION,
-                message=f"Potential N+1 query: ORM call inside a loop at line {node.lineno}. "
-                        f"This executes one query per iteration.",
+                message=f"Potential N+1 query: .{', .'.join(call_names)}() "
+                        f"called inside a loop at line {node.lineno}. "
+                        f"This may execute one query per iteration.",
                 remediation=(
                     "Move the query outside the loop using `select_related()` or `prefetch_related()` "
                     "(Django), eager loading, or batch fetching with `__in` filters."
@@ -296,6 +381,21 @@ class AntiPatternVisitor(ast.NodeVisitor):
             ))
 
         self.generic_visit(node)
+
+    def _is_retry_loop(self, for_node):
+        """Detect retry/polling patterns like `for _ in range(N):`."""
+        # Check if iterating over range()
+        if not isinstance(for_node.iter, ast.Call):
+            return False
+        func = for_node.iter
+        if isinstance(func.func, ast.Name) and func.func.id == 'range':
+            # Check if loop var is unused or named like attempt/retry/try
+            target = for_node.target
+            if isinstance(target, ast.Name):
+                name = target.id
+                if name == '_' or name.startswith(('attempt', 'retry', 'try_')):
+                    return True
+        return False
 
 
 def _set_parents(tree: ast.AST):
