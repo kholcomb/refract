@@ -49,6 +49,7 @@ interface ServerConfig {
   ignorePaths: string[]
   showInlineHints: boolean
   ciParity: boolean
+  scanOnOpen: boolean
   astCheckerPath: string
 }
 
@@ -74,6 +75,7 @@ let config: ServerConfig = {
   ignorePaths: [],
   showInlineHints: true,
   ciParity: true,
+  scanOnOpen: true,
   astCheckerPath: '',
 }
 
@@ -124,6 +126,15 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 
 connection.onInitialized(() => {
   connection.console.log('LSP initialized, ready to scan')
+
+  // Auto-scan the workspace on startup so users get findings without
+  // visiting every file. Small delay to let config sync arrive first.
+  setTimeout(() => {
+    if (config.enabled && config.scanOnOpen && workspaceRoot) {
+      connection.console.log('Starting initial workspace scan...')
+      scanWorkspace()
+    }
+  }, 1500)
 })
 
 // --- Config sync ---
@@ -155,17 +166,18 @@ documents.onDidSave(event => {
 })
 
 documents.onDidOpen(event => {
-  // On open: serve cached findings if available, otherwise scan
+  if (!config.enabled) return
+
   const uri = event.document.uri
   const fsPath = URI.parse(uri).fsPath
   const lang = languageFromPath(fsPath)
   if (!lang) return
 
+  // Serve cached findings immediately, then rescan in background
   if (findingsCache.has(fsPath)) {
     publishDiagnostics(uri, findingsCache.get(fsPath)!)
-  } else {
-    scanFile(fsPath, lang, uri)
   }
+  scanFile(fsPath, lang, uri)
 })
 
 // --- Manual scan command ---

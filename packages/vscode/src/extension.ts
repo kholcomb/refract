@@ -266,6 +266,7 @@ function syncConfigToServer(): void {
     ignorePaths:         cfg.get('ignorePaths'),
     showInlineHints:     cfg.get('showInlineHints'),
     ciParity:            cfg.get('ciParity'),
+    scanOnOpen:          cfg.get('scanOnOpen'),
   })
 }
 

@@ -144,6 +144,11 @@
           "type": "boolean",
           "default": true,
           "description": "Use identical thresholds as your action.yml so IDE previews exactly what CI will catch"
+        },
+        "antipattern.scanOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan the full workspace when the extension activates"
         }
       }
     }
