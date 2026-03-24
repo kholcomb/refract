@@ -8,6 +8,7 @@ on:
       - 'packages/core/**'
       - 'language-packs/**'
       - 'package.json'
+      - 'package-lock.json'
       - 'tsconfig.base.json'
   release:
     types: [published]
