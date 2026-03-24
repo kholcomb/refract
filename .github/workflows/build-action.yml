@@ -30,8 +30,6 @@ jobs:
 
       - run: npm run build:sidecars
 
-      - run: npm run build --workspace=packages/core
-
       - run: npm run build --workspace=packages/action
 
       - run: npm test --workspace=packages/action

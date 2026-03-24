@@ -4,7 +4,7 @@
   "description": "GitHub Action entrypoint for the anti-pattern detector",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && ncc build lib/index.js -o dist --source-map --license licenses.txt",
+    "build": "tsc --build && ncc build lib/index.js -o dist --source-map --license licenses.txt",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit"
