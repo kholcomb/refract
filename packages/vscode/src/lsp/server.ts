@@ -86,13 +86,18 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
     ? URI.parse(params.rootUri).fsPath
     : params.rootPath ?? ''
 
-  // Locate ast_checks.py relative to this extension
-  // In production this ships inside the extension's resources folder
+  // Locate ast_checks.py:
+  // 1. Production (installed .vsix): language-packs/ is copied into the extension root at package time
+  // 2. Dev (F5): extensionPath is packages/vscode/, language-packs/ is at repo root (../../)
   const extensionPath = params.initializationOptions?.extensionPath ?? ''
-  config.astCheckerPath = path.join(
-    extensionPath || path.join(__dirname, '..'),
-    'language-packs', 'python', 'scripts', 'ast_checks.py'
-  )
+  const prodPath = extensionPath
+    ? path.join(extensionPath, 'language-packs', 'python', 'scripts', 'ast_checks.py')
+    : ''
+  const devPath = extensionPath
+    ? path.join(extensionPath, '..', '..', 'language-packs', 'python', 'scripts', 'ast_checks.py')
+    : path.join(__dirname, '..', '..', '..', 'language-packs', 'python', 'scripts', 'ast_checks.py')
+
+  config.astCheckerPath = (prodPath && fs.existsSync(prodPath)) ? prodPath : devPath
 
   connection.console.log(`Anti-Pattern LSP server started`)
   connection.console.log(`Workspace: ${workspaceRoot}`)
@@ -112,10 +117,6 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
           'antipattern.copyAsAgentPrompt',
         ],
         resolveProvider: true,
-      },
-      diagnosticProvider: {
-        interFileDependencies: false,
-        workspaceDiagnostics: false,
       },
     },
   }
