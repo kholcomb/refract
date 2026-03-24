@@ -375,38 +375,86 @@ func (c *checker) checkGodStruct(file *ast.File) {
 // CHECK: Magic numbers
 // ============================================================================
 
-var allowedNumbers = map[string]bool{
-	"0": true, "1": true, "-1": true, "2": true, "100": true,
-	"0.0": true, "1.0": true,
+// Only truly trivial values are unconditionally allowed.
+// Everything else is filtered by context, not by value.
+var trivialNumbers = map[string]bool{
+	"0": true, "1": true, "-1": true,
 }
 
 func (c *checker) checkMagicNumbers(file *ast.File) {
-	// Collect positions of all literals inside const blocks so we can skip them
-	constPositions := map[token.Pos]bool{}
+	// Collect positions to skip: const blocks and var declarations with names
+	skipPositions := map[token.Pos]bool{}
+
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok || genDecl.Tok != token.CONST {
+		if !ok {
 			continue
 		}
-		ast.Inspect(genDecl, func(n ast.Node) bool {
-			if lit, ok := n.(*ast.BasicLit); ok {
-				constPositions[lit.Pos()] = true
+		// Skip const blocks entirely
+		if genDecl.Tok == token.CONST {
+			ast.Inspect(genDecl, func(n ast.Node) bool {
+				if lit, ok := n.(*ast.BasicLit); ok {
+					skipPositions[lit.Pos()] = true
+				}
+				return true
+			})
+		}
+		// Skip named var declarations: var bufSize = 4096
+		if genDecl.Tok == token.VAR {
+			for _, spec := range genDecl.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok || len(vs.Names) == 0 {
+					continue
+				}
+				// Only skip if the var has a meaningful name (not _ or single letter)
+				name := vs.Names[0].Name
+				if len(name) > 1 && name != "_" {
+					ast.Inspect(vs, func(n ast.Node) bool {
+						if lit, ok := n.(*ast.BasicLit); ok {
+							skipPositions[lit.Pos()] = true
+						}
+						return true
+					})
+				}
 			}
-			return true
-		})
+		}
 	}
+
+	// Build a map of literal positions -> their parent context for contextual filtering
+	type literalContext struct {
+		inComparison   bool // if x == 200 { (HTTP status check)
+		inBitOp        bool // x & 0x80 (bitmask)
+		inSliceExpr    bool // s[0:4] (slice bounds)
+		inMapLiteral   bool // map[string]int{"a": 1}
+		inTestFile     bool
+	}
+
+	isTestFile := strings.HasSuffix(c.file, "_test.go")
 
 	ast.Inspect(file, func(n ast.Node) bool {
 		lit, ok := n.(*ast.BasicLit)
 		if !ok || (lit.Kind != token.INT && lit.Kind != token.FLOAT) {
 			return true
 		}
-		if allowedNumbers[lit.Value] {
+		if trivialNumbers[lit.Value] {
 			return true
 		}
-		if constPositions[lit.Pos()] {
+		if skipPositions[lit.Pos()] {
 			return true
 		}
+		// Skip test files -- tests legitimately use literal values in assertions
+		if isTestFile {
+			return true
+		}
+		// Skip hex literals used in bitwise context (bitmasks are self-documenting)
+		if strings.HasPrefix(lit.Value, "0x") || strings.HasPrefix(lit.Value, "0X") {
+			return true
+		}
+		// Skip file permission modes (e.g., 0644, 0755)
+		if strings.HasPrefix(lit.Value, "0") && len(lit.Value) >= 3 && lit.Kind == token.INT {
+			return true
+		}
+
 		pos := c.fset.Position(lit.Pos())
 		c.add(Finding{
 			Antipattern:     "magic_number",
