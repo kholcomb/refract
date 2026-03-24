@@ -35245,7 +35245,7 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
-/***/ 6487:
+/***/ 4461:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -35289,10 +35289,10 @@ exports.buildSummary = buildSummary;
 const core = __importStar(__nccwpck_require__(7184));
 const github = __importStar(__nccwpck_require__(8064));
 const fs = __importStar(__nccwpck_require__(9896));
-const language_detector_1 = __nccwpck_require__(9840);
-const python_1 = __nccwpck_require__(2351);
-const typescript_1 = __nccwpck_require__(4838);
-const outputter_1 = __nccwpck_require__(7275);
+const language_detector_1 = __nccwpck_require__(2778);
+const python_1 = __nccwpck_require__(5373);
+const typescript_1 = __nccwpck_require__(6752);
+const outputter_1 = __nccwpck_require__(8525);
 const core_1 = __nccwpck_require__(5026);
 Object.defineProperty(exports, "SEVERITY_ORDER", ({ enumerable: true, get: function () { return core_1.SEVERITY_ORDER; } }));
 async function run() {
@@ -35457,7 +35457,7 @@ run();
 
 /***/ }),
 
-/***/ 9840:
+/***/ 2778:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -35562,7 +35562,7 @@ async function detectLanguages(rootPath, ignorePaths) {
 
 /***/ }),
 
-/***/ 2351:
+/***/ 5373:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -35607,7 +35607,7 @@ const exec = __importStar(__nccwpck_require__(9192));
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const core_1 = __nccwpck_require__(5026);
-const shared_scanners_1 = __nccwpck_require__(6960);
+const shared_scanners_1 = __nccwpck_require__(7010);
 const PACK_VERSION = 'python_v1';
 async function scanPython(options) {
     const findings = [];
@@ -35994,7 +35994,7 @@ function generateId() {
 
 /***/ }),
 
-/***/ 4838:
+/***/ 6752:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36039,7 +36039,7 @@ const exec = __importStar(__nccwpck_require__(9192));
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const core_1 = __nccwpck_require__(5026);
-const shared_scanners_1 = __nccwpck_require__(6960);
+const shared_scanners_1 = __nccwpck_require__(7010);
 const PACK_VERSION = 'typescript_v1';
 async function scanTypeScript(options) {
     const findings = [];
@@ -36336,7 +36336,7 @@ function inferLang(filePath) {
 
 /***/ }),
 
-/***/ 7275:
+/***/ 8525:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36700,7 +36700,7 @@ function sleep(ms) {
 
 /***/ }),
 
-/***/ 6960:
+/***/ 7010:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36826,7 +36826,7 @@ function generateId() {
 
 /***/ }),
 
-/***/ 5899:
+/***/ 6331:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36877,41 +36877,11 @@ const path = __importStar(__nccwpck_require__(6928));
 function getActionRoot() {
     return process.env.GITHUB_ACTION_PATH ?? path.join(__dirname, '..');
 }
-
-
-/***/ }),
-
-/***/ 5026:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getActionRoot = void 0;
-__exportStar(__nccwpck_require__(5875), exports);
-__exportStar(__nccwpck_require__(4171), exports);
-__exportStar(__nccwpck_require__(5592), exports);
-var action_root_1 = __nccwpck_require__(5899);
-Object.defineProperty(exports, "getActionRoot", ({ enumerable: true, get: function () { return action_root_1.getActionRoot; } }));
-
+//# sourceMappingURL=action-root.js.map
 
 /***/ }),
 
-/***/ 4171:
+/***/ 8907:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -36927,11 +36897,11 @@ function bySeverity(a, b) {
 function severityAtOrAbove(severity, threshold) {
     return exports.SEVERITY_ORDER.indexOf(severity) <= exports.SEVERITY_ORDER.indexOf(threshold);
 }
-
+//# sourceMappingURL=severity.js.map
 
 /***/ }),
 
-/***/ 5592:
+/***/ 9580:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -36973,7 +36943,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.loadThresholds = loadThresholds;
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
-const action_root_1 = __nccwpck_require__(5899);
+const action_root_1 = __nccwpck_require__(6331);
 const DEFAULT_THRESHOLDS = {
     code_structure: {
         max_cyclomatic_complexity: 10,
@@ -37067,11 +37037,11 @@ function parseYamlValue(raw) {
     // String
     return trimmed;
 }
-
+//# sourceMappingURL=thresholds.js.map
 
 /***/ }),
 
-/***/ 5875:
+/***/ 7167:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -37084,6 +37054,36 @@ function parseYamlValue(raw) {
  * This is the contract that downstream AI agents and issue trackers consume.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+//# sourceMappingURL=types.js.map
+
+/***/ }),
+
+/***/ 5026:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.getActionRoot = void 0;
+__exportStar(__nccwpck_require__(7167), exports);
+__exportStar(__nccwpck_require__(8907), exports);
+__exportStar(__nccwpck_require__(9580), exports);
+var action_root_1 = __nccwpck_require__(6331);
+Object.defineProperty(exports, "getActionRoot", ({ enumerable: true, get: function () { return action_root_1.getActionRoot; } }));
 
 
 /***/ }),
@@ -37402,7 +37402,7 @@ module.exports = require("util");
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(6487);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(4461);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()
