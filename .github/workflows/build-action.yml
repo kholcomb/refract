@@ -44,6 +44,7 @@ jobs:
             echo "No changes to dist/"
           else
             git commit -m "chore: rebuild action dist [skip ci]"
+            git pull --rebase origin main
             git push
           fi
 
