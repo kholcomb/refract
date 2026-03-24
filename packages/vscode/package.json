@@ -150,8 +150,8 @@
   },
   "scripts": {
     "build": "npm run build:ext && npm run build:lsp",
-    "build:ext": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node --sourcemap",
-    "build:lsp": "esbuild src/lsp/server.ts --bundle --outfile=dist/lspServer.js --platform=node --sourcemap",
+    "build:ext": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node --sourcemap --alias:@refract/core=../core/src/index.ts",
+    "build:lsp": "esbuild src/lsp/server.ts --bundle --outfile=dist/lspServer.js --platform=node --sourcemap --alias:@refract/core=../core/src/index.ts",
     "watch": "npm run build -- --watch",
     "package": "vsce package",
     "typecheck": "tsc --noEmit"

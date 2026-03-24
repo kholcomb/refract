@@ -2,13 +2,14 @@ node_modules/
 coverage/
 *.tgz
 /tmp/
+*.vsix
 
 # OS
 .DS_Store
 Thumbs.db
 
-# IDE
-.vscode/
+# IDE (user-specific settings ignored, project config committed)
+.vscode/settings.json
 .idea/
 
 # Build artifacts (action dist is auto-committed by CI via build-action.yml)
