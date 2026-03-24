@@ -34,11 +34,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const serverOptions: ServerOptions = {
     run: {
       module: serverModule,
-      transport: TransportKind.ipc,
+      transport: TransportKind.stdio,
     },
     debug: {
       module: serverModule,
-      transport: TransportKind.ipc,
+      transport: TransportKind.stdio,
       options: { execArgv: ['--nolazy', '--inspect=6009'] },
     },
   }
@@ -258,15 +258,15 @@ export function deactivate(): Thenable<void> | undefined {
 function syncConfigToServer(): void {
   const cfg = vscode.workspace.getConfiguration('antipattern')
   client.sendNotification('antipattern/updateConfig', {
-    enabled:             cfg.get('enabled'),
-    severityThreshold:   cfg.get('severityThreshold'),
-    confidenceThreshold: cfg.get('confidenceThreshold'),
-    categories:          cfg.get('categories'),
-    pythonPath:          cfg.get('pythonPath'),
-    ignorePaths:         cfg.get('ignorePaths'),
-    showInlineHints:     cfg.get('showInlineHints'),
-    ciParity:            cfg.get('ciParity'),
-    scanOnOpen:          cfg.get('scanOnOpen'),
+    enabled:             cfg.get('enabled', true),
+    severityThreshold:   cfg.get('severityThreshold', 'medium'),
+    confidenceThreshold: cfg.get('confidenceThreshold', 0.7),
+    categories:          cfg.get('categories', ['code_structure', 'security', 'dependencies', 'test_quality']),
+    pythonPath:          cfg.get('pythonPath', 'python3'),
+    ignorePaths:         cfg.get('ignorePaths', []),
+    showInlineHints:     cfg.get('showInlineHints', true),
+    ciParity:            cfg.get('ciParity', true),
+    scanOnOpen:          cfg.get('scanOnOpen', true),
   })
 }
 

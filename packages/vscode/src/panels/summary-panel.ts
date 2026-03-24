@@ -92,7 +92,7 @@ function buildHtml(findings: Finding[]): string {
       || a.file.localeCompare(b.file)
     )
     .map(f => `
-      <div class="finding-card severity-${f.severity}" data-id="${f.id}">
+      <div class="finding-card severity-${f.severity}" data-id="${f.id}" data-category="${f.category}">
         <div class="finding-header">
           <span class="severity-badge severity-${f.severity}">${f.severity.toUpperCase()}</span>
           <span class="finding-name">${f.antipattern_name}</span>
@@ -303,7 +303,7 @@ ${findings.length === 0
     document.querySelectorAll('.finding-card').forEach(card => {
       const show = (
         (!sev || card.classList.contains('severity-' + sev)) &&
-        (!cat || card.querySelector('.tag')?.textContent?.includes(cat)) &&
+        (!cat || card.dataset.category === cat) &&
         (!txt || card.textContent.toLowerCase().includes(txt))
       )
       card.style.display = show ? '' : 'none'

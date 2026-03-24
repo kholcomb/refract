@@ -194,11 +194,11 @@ connection.onNotification('antipattern/scanWorkspace', () => {
 })
 
 connection.onNotification('antipattern/clearFindings', () => {
+  // Clear diagnostics for ALL cached files, not just open documents
+  for (const fsPath of findingsCache.keys()) {
+    connection.sendDiagnostics({ uri: URI.file(fsPath).toString(), diagnostics: [] })
+  }
   findingsCache.clear()
-  // Clear all diagnostics
-  documents.all().forEach(doc => {
-    connection.sendDiagnostics({ uri: doc.uri, diagnostics: [] })
-  })
   connection.sendNotification('antipattern/findingsCleared')
 })
 
@@ -278,8 +278,10 @@ function runPythonAnalysis(
     path.dirname(fsPath),       // scan the directory containing the file
     '--output', outputPath,
     '--single-file', fsPath,    // tell checker to only process this one file
-    '--ignore', config.ignorePaths.join(','),
   ]
+  if (config.ignorePaths.length > 0) {
+    args.push('--ignore', config.ignorePaths.join(','))
+  }
 
   const proc = cp.spawn(config.pythonPath, args, {
     cwd: workspaceRoot,
@@ -289,7 +291,12 @@ function runPythonAnalysis(
   let stderr = ''
   proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
 
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
+    if (signal === 'SIGTERM') {
+      connection.console.warn(`AST checker timed out after 30s for ${fsPath}`)
+      resolve([])
+      return
+    }
     if (code !== 0 && code !== null) {
       connection.console.warn(`AST checker exited ${code}: ${stderr}`)
     }
@@ -358,8 +365,8 @@ connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
   const fsPath = URI.parse(uri).fsPath
 
   for (const diagnostic of params.context.diagnostics) {
-    const finding = diagnostic.data as Finding
-    if (!finding?.antipattern) continue
+    const finding = diagnostic.data as Finding | undefined
+    if (!finding?.antipattern || !finding?.rule_id || !finding?.antipattern_name) continue
 
     // 1. One-click fix (if we have an auto-fix for this pattern)
     const fix = buildAutoFix(finding, uri, diagnostic.range)
@@ -499,6 +506,9 @@ connection.onRequest('antipattern/buildAgentPrompt', (finding: Finding) => {
 function meetsThreshold(f: Finding): boolean {
   const threshIdx = SEVERITY_ORDER.indexOf(config.severityThreshold as any)
   const findingIdx = SEVERITY_ORDER.indexOf(f.severity as any)
+  // Guard: if threshold is invalid, default to showing medium and above
+  if (threshIdx === -1) return findingIdx <= 2 && f.confidence >= config.confidenceThreshold
+  if (findingIdx === -1) return false
   return findingIdx <= threshIdx && f.confidence >= config.confidenceThreshold
 }
 
@@ -515,11 +525,22 @@ function* walkDir(dir: string, ignorePatterns: string[]): Generator<string> {
     'node_modules', '__pycache__', '.git', 'venv', '.venv',
     'dist', 'build', '.tox', '.mypy_cache'
   ])
-  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return
+  }
   for (const entry of entries) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
-      if (!skipDirs.has(entry.name)) yield* walkDir(full, ignorePatterns)
+      if (skipDirs.has(entry.name) || entry.name.startsWith('.')) continue
+      // Check user-configured ignore patterns (glob-like prefix match)
+      const shouldIgnore = ignorePatterns.some(pattern => {
+        const clean = pattern.replace(/\*\*/g, '').replace(/\*/g, '').replace(/^\/|\/$/g, '')
+        return clean && (entry.name === clean || full.includes(clean))
+      })
+      if (!shouldIgnore) yield* walkDir(full, ignorePatterns)
     } else {
       yield full
     }
