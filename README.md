@@ -183,7 +183,3 @@ npm run typecheck
 ### Monorepo structure
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full package layout and data flow.
-
-## Licensing
-
-All tools in the analysis pipeline are MIT, Apache 2.0, or LGPL licensed — safe to monetize. Semgrep rules are explicitly excluded (restricted license). See [LICENSE](LICENSE).
