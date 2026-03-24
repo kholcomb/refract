@@ -131,10 +131,19 @@ class AntiPatternVisitor(ast.NodeVisitor):
         is_recursive = self._is_recursive(node)
 
         # --- Nesting depth ---
+        outer_node = node
+
         class NestingCounter(ast.NodeVisitor):
             def __init__(self):
                 self.max_depth = 0
                 self.depth = 0
+
+            def visit_FunctionDef(self, n):
+                if n is outer_node:
+                    self.generic_visit(n)  # process root function body
+                # else: skip nested function bodies
+
+            visit_AsyncFunctionDef = visit_FunctionDef
 
             def visit_If(self, if_node):
                 if self._is_early_exit(if_node):
@@ -172,37 +181,11 @@ class AntiPatternVisitor(ast.NodeVisitor):
         counter = NestingCounter()
         counter.visit(node)
 
-        threshold = 6 if is_recursive else 5
-        if counter.max_depth >= threshold:
-            self.findings.append(Finding(
-                id=make_id(),
-                antipattern='deep_nesting',
-                antipattern_name='Deep Nesting',
-                category='code_structure',
-                severity='medium' if counter.max_depth < 7 else 'high',
-                confidence=0.85,
-                file=self.filepath,
-                line_start=node.lineno,
-                line_end=getattr(node, 'end_lineno', node.lineno),
-                language='python',
-                language_pack=PACK_VERSION,
-                message=f"Function '{node.name}' has nesting depth of {counter.max_depth} "
-                        f"(threshold: {threshold}). Deep nesting makes code hard to read and test.",
-                remediation=(
-                    "Reduce nesting by: (1) returning early on guard conditions, "
-                    "(2) extracting nested blocks into helper functions, "
-                    "(3) using array methods or generators instead of nested loops."
-                ),
-                effort='hours',
-                tool='ast-checker',
-                rule_id='python/deep-nesting',
-                code_snippet=self._snippet(node),
-                tags=['maintainability', 'readability'],
-            ))
-
-        # --- Cognitive complexity ---
+        # --- Cognitive complexity (checked first so nesting can defer to it) ---
         cog = self._cognitive_complexity(node)
-        if cog >= 15:
+        cc_fired = cog >= 20
+
+        if cc_fired:
             self.findings.append(Finding(
                 id=make_id(),
                 antipattern='high_cyclomatic_complexity',
@@ -216,7 +199,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 language='python',
                 language_pack=PACK_VERSION,
                 message=f"Function '{node.name}' has cognitive complexity of {cog} "
-                        f"(threshold: 15). This function is hard to understand and test.",
+                        f"(threshold: 20). This function is hard to understand and test.",
                 remediation=(
                     "Reduce complexity by extracting helper functions, flattening nested "
                     "loops, using early returns, or simplifying boolean expressions."
@@ -228,6 +211,36 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 references=['https://www.sonarsource.com/docs/CognitiveComplexity.pdf'],
                 tags=['maintainability', 'testability'],
             ))
+
+        # --- Nesting depth (suppressed if CC already reported on this function) ---
+        if not cc_fired:
+            threshold = 6 if is_recursive else 5
+            if counter.max_depth >= threshold:
+                self.findings.append(Finding(
+                    id=make_id(),
+                    antipattern='deep_nesting',
+                    antipattern_name='Deep Nesting',
+                    category='code_structure',
+                    severity='medium' if counter.max_depth < 7 else 'high',
+                    confidence=0.85,
+                    file=self.filepath,
+                    line_start=node.lineno,
+                    line_end=getattr(node, 'end_lineno', node.lineno),
+                    language='python',
+                    language_pack=PACK_VERSION,
+                    message=f"Function '{node.name}' has nesting depth of {counter.max_depth} "
+                            f"(threshold: {threshold}). Deep nesting makes code hard to read and test.",
+                    remediation=(
+                        "Reduce nesting by: (1) returning early on guard conditions, "
+                        "(2) extracting nested blocks into helper functions, "
+                        "(3) using array methods or generators instead of nested loops."
+                    ),
+                    effort='hours',
+                    tool='ast-checker',
+                    rule_id='python/deep-nesting',
+                    code_snippet=self._snippet(node),
+                    tags=['maintainability', 'readability'],
+                ))
 
     def _cognitive_complexity(self, func_node):
         """Calculate cognitive complexity (SonarQube-inspired).
@@ -246,6 +259,11 @@ class AntiPatternVisitor(ast.NodeVisitor):
 
         def walk(node):
             nonlocal score, nesting
+
+            # Skip nested function/class bodies -- they get scored independently
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if node is not func_node:
+                    return
 
             if isinstance(node, ast.If):
                 score += 1 + nesting  # +1 base, +nesting for depth

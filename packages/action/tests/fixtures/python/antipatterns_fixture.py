@@ -51,13 +51,14 @@ def calculate_discount(price):
 # ── Deep nesting ──────────────────────────────────────────────────────────────
 def process_orders(orders):
     results = []
-    for order in orders:
-        if order.get('active'):
-            for item in order.get('items', []):
-                if item.get('available'):
-                    for variant in item.get('variants', []):
-                        if variant.get('stock') > 0:    # depth 5
-                            results.append(variant)     # antipattern: deep_nesting
+    for order in orders:                                    # depth 1
+        if order.get('active'):                             # depth 2
+            for item in order.get('items', []):             # depth 3
+                if item.get('available'):                   # depth 4
+                    for variant in item.get('variants', []): # depth 5
+                        if variant.get('stock') > 0:        # depth 6
+                            for size in variant.get('sizes', []):  # depth 7
+                                results.append(size)        # antipattern: deep_nesting
     return results
 
 
