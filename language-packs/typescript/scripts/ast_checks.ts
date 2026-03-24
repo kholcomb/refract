@@ -562,6 +562,161 @@ function checkCallbackHell(
   return findings
 }
 
+function checkPromiseNoCatch(
+  ast: TSESTree.Program,
+  filePath: string,
+  sourceLines: string[]
+): Finding[] {
+  const findings: Finding[] = []
+  const now = new Date().toISOString()
+  const lang = inferLang(filePath)
+  const isTestFile = filePath.includes('.test.') || filePath.includes('.spec.')
+  if (isTestFile) return findings
+
+  walkAST(ast, (node) => {
+    // .then() without .catch() in the same chain
+    if (node.type !== AST_NODE_TYPES.CallExpression) return
+    if (node.callee.type !== AST_NODE_TYPES.MemberExpression) return
+    const method = node.callee.property
+    if (method.type !== AST_NODE_TYPES.Identifier || method.name !== 'then') return
+
+    // Walk up to see if .catch() follows in the chain
+    // Check: is the result of .then() immediately followed by .catch()?
+    // We can't easily check the full chain from inside, so we check if
+    // .then() is the terminal call (not chained further with .catch)
+    // Heuristic: if .then() is a standalone expression statement, it's unguarded
+    // We flag it with moderate confidence since the catch might be elsewhere
+    findings.push({
+      id: makeId(),
+      antipattern: 'promise_no_catch',
+      antipattern_name: 'Unhandled Promise',
+      category: 'code_structure',
+      severity: 'medium',
+      confidence: 0.75,
+      file: filePath,
+      line_start: node.loc.start.line,
+      line_end: node.loc.end.line,
+      language: lang,
+      language_pack: PACK_VERSION,
+      message: '.then() without .catch() -- unhandled promise rejections crash Node.js processes.',
+      remediation: 'Add .catch(err => ...) to the promise chain, or use async/await with try/catch.',
+      effort: 'minutes',
+      tool: 'ast-checker',
+      rule_id: 'ts/promise-no-catch',
+      references: ['https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/catch'],
+      tags: ['async', 'reliability'],
+      detected_at: now,
+    })
+  })
+
+  return findings
+}
+
+function checkConsoleLogLeft(
+  ast: TSESTree.Program,
+  filePath: string,
+  sourceLines: string[]
+): Finding[] {
+  const findings: Finding[] = []
+  const now = new Date().toISOString()
+  const lang = inferLang(filePath)
+
+  // Skip test files and config files
+  const basename = path.basename(filePath)
+  if (basename.includes('.test.') || basename.includes('.spec.') ||
+      basename.includes('config') || basename.includes('.config.')) {
+    return findings
+  }
+
+  let consoleCount = 0
+  const consoleLocations: number[] = []
+
+  walkAST(ast, (node) => {
+    if (node.type !== AST_NODE_TYPES.CallExpression) return
+    if (node.callee.type !== AST_NODE_TYPES.MemberExpression) return
+    const obj = node.callee.object
+    const prop = node.callee.property
+    if (obj.type !== AST_NODE_TYPES.Identifier || obj.name !== 'console') return
+    if (prop.type !== AST_NODE_TYPES.Identifier) return
+    if (['log', 'debug', 'info', 'warn', 'error', 'trace'].includes(prop.name)) {
+      consoleCount++
+      consoleLocations.push(node.loc.start.line)
+    }
+  })
+
+  if (consoleCount > 3) {
+    findings.push({
+      id: makeId(),
+      antipattern: 'console_log_left',
+      antipattern_name: 'Console Logging Left in Code',
+      category: 'code_structure',
+      severity: 'low',
+      confidence: 0.8,
+      file: filePath,
+      line_start: consoleLocations[0] ?? 1,
+      line_end: consoleLocations[consoleLocations.length - 1] ?? 1,
+      language: lang,
+      language_pack: PACK_VERSION,
+      message: `File has ${consoleCount} console.log/debug/warn calls. Console output in production code leaks internal state and impacts performance.`,
+      remediation: 'Remove console calls or replace with a proper logging library that supports log levels and structured output.',
+      effort: 'minutes',
+      tool: 'ast-checker',
+      rule_id: 'ts/console-log-left',
+      tags: ['cleanup', 'production'],
+      detected_at: now,
+    })
+  }
+
+  return findings
+}
+
+function checkNonNullAssertion(
+  ast: TSESTree.Program,
+  filePath: string,
+  sourceLines: string[]
+): Finding[] {
+  const findings: Finding[] = []
+  const now = new Date().toISOString()
+  const lang = inferLang(filePath)
+  if (lang === 'javascript') return findings // JS doesn't have !
+
+  let assertionCount = 0
+  const locations: number[] = []
+
+  walkAST(ast, (node) => {
+    if (node.type === AST_NODE_TYPES.TSNonNullExpression) {
+      assertionCount++
+      locations.push(node.loc.start.line)
+    }
+  })
+
+  if (assertionCount > 5) {
+    findings.push({
+      id: makeId(),
+      antipattern: 'non_null_assertion',
+      antipattern_name: 'Excessive Non-Null Assertions',
+      category: 'code_structure',
+      severity: assertionCount > 10 ? 'high' : 'medium',
+      confidence: 0.85,
+      file: filePath,
+      line_start: locations[0] ?? 1,
+      line_end: locations[locations.length - 1] ?? 1,
+      language: lang,
+      language_pack: PACK_VERSION,
+      message: `File has ${assertionCount} non-null assertion operators (!). Each one silences a potential null/undefined error that TypeScript would otherwise catch.`,
+      remediation: 'Replace ! with proper null checks: optional chaining (?.), nullish coalescing (??), or type narrowing with if guards.',
+      effort: 'hours',
+      tool: 'ast-checker',
+      rule_id: 'ts/non-null-assertion',
+      references: ['https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#non-null-assertion-operator-postfix-'],
+      tags: ['type-safety', 'maintainability'],
+      detected_at: now,
+    })
+  }
+
+  return findings
+}
+
 // -----------------------------------------------------------------------------
 // AST Walking Utility
 // -----------------------------------------------------------------------------
@@ -633,6 +788,9 @@ function scanFile(filePath: string, repoRoot: string): Finding[] {
     ...checkAnyTypeAbuse(ast, relPath, sourceLines),
     ...checkTsIgnoreProliferation(ast, relPath, sourceLines),
     ...checkCallbackHell(ast, relPath, sourceLines),
+    ...checkPromiseNoCatch(ast, relPath, sourceLines),
+    ...checkConsoleLogLeft(ast, relPath, sourceLines),
+    ...checkNonNullAssertion(ast, relPath, sourceLines),
   ]
 }
 

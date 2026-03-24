@@ -616,6 +616,154 @@ class AntiPatternVisitor(ast.NodeVisitor):
         return False
 
 
+    # --- datetime.now() without timezone ---
+    def visit_Call(self, node: ast.Call):
+        # Check for datetime.now() or datetime.datetime.now() without tz arg
+        if self._is_datetime_now_naive(node):
+            pos = node.lineno
+            self.findings.append(Finding(
+                id=make_id(),
+                antipattern='datetime_now_naive',
+                antipattern_name='Naive datetime.now()',
+                category='code_structure',
+                severity='medium',
+                confidence=0.9,
+                file=self.filepath,
+                line_start=pos,
+                line_end=pos,
+                language='python',
+                language_pack=PACK_VERSION,
+                message="datetime.now() called without timezone. This creates a naive datetime that will cause bugs in multi-timezone deployments.",
+                remediation="Use datetime.now(tz=timezone.utc) or datetime.now(tz=ZoneInfo('UTC')) for timezone-aware datetimes.",
+                effort='minutes',
+                tool='ast-checker',
+                rule_id='python/datetime-now-naive',
+                references=['https://docs.python.org/3/library/datetime.html#aware-and-naive-objects'],
+                tags=['bugs', 'timezone'],
+            ))
+
+        # Check for f-string or .format() inside .execute() or .raw() SQL calls
+        if self._is_string_format_sql(node):
+            pos = node.lineno
+            self.findings.append(Finding(
+                id=make_id(),
+                antipattern='string_format_sql',
+                antipattern_name='String-Formatted SQL',
+                category='security',
+                severity='high',
+                confidence=0.85,
+                file=self.filepath,
+                line_start=pos,
+                line_end=pos,
+                language='python',
+                language_pack=PACK_VERSION,
+                message="SQL query built with string formatting inside .execute() or .raw(). This is a SQL injection vector.",
+                remediation="Use parameterized queries: cursor.execute('SELECT * FROM t WHERE id = %s', [user_id])",
+                effort='minutes',
+                tool='ast-checker',
+                rule_id='python/string-format-sql',
+                references=['https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html'],
+                tags=['security', 'sql-injection', 'owasp-a03'],
+            ))
+
+        self.generic_visit(node)
+
+    def _is_datetime_now_naive(self, node):
+        """Check if this is datetime.now() or datetime.datetime.now() without tz/timezone arg."""
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != 'now':
+            return False
+        # Check receiver is datetime or datetime.datetime
+        receiver = node.func.value
+        is_datetime = False
+        if isinstance(receiver, ast.Name) and receiver.id == 'datetime':
+            is_datetime = True
+        elif isinstance(receiver, ast.Attribute) and receiver.attr == 'datetime':
+            is_datetime = True
+        if not is_datetime:
+            return False
+        # Check if tz= or tzinfo= keyword arg is provided
+        for kw in node.keywords:
+            if kw.arg in ('tz', 'tzinfo'):
+                return False
+        # Also check positional arg (datetime.now(timezone.utc))
+        if node.args:
+            return False
+        return True
+
+    def _is_string_format_sql(self, node):
+        """Check if a .execute() or .raw() call uses f-strings or .format() as the query arg."""
+        if not isinstance(node.func, ast.Attribute):
+            return False
+        if node.func.attr not in ('execute', 'raw', 'executemany'):
+            return False
+        if not node.args:
+            return False
+        first_arg = node.args[0]
+        # f-string
+        if isinstance(first_arg, ast.JoinedStr):
+            return True
+        # "...".format(...)
+        if (isinstance(first_arg, ast.Call)
+                and isinstance(first_arg.func, ast.Attribute)
+                and first_arg.func.attr == 'format'):
+            return True
+        # "..." % (...)
+        if isinstance(first_arg, ast.BinOp) and isinstance(first_arg.op, ast.Mod):
+            return True
+        return False
+
+    # --- isinstance chain ---
+    def visit_If(self, node: ast.If):
+        """Detect long isinstance chains (should use polymorphism or match)."""
+        chain_length = self._isinstance_chain_length(node)
+        if chain_length >= 4:
+            self.findings.append(Finding(
+                id=make_id(),
+                antipattern='isinstance_chain',
+                antipattern_name='Long isinstance Chain',
+                category='code_structure',
+                severity='medium' if chain_length < 6 else 'high',
+                confidence=0.8,
+                file=self.filepath,
+                line_start=node.lineno,
+                line_end=getattr(node, 'end_lineno', node.lineno),
+                language='python',
+                language_pack=PACK_VERSION,
+                message=f"isinstance chain with {chain_length} branches. This pattern suggests missing polymorphism or a structural pattern match.",
+                remediation="Refactor using: (1) polymorphism with a common base class, (2) a dispatch dict mapping types to handlers, or (3) match/case (Python 3.10+).",
+                effort='hours',
+                tool='ast-checker',
+                rule_id='python/isinstance-chain',
+                tags=['design', 'maintainability'],
+            ))
+        self.generic_visit(node)
+
+    def _isinstance_chain_length(self, if_node):
+        """Count consecutive if/elif branches that test isinstance()."""
+        count = 0
+        node = if_node
+        while node:
+            if self._test_is_isinstance(node.test if isinstance(node, ast.If) else None):
+                count += 1
+            else:
+                break
+            # Follow the elif chain
+            if isinstance(node, ast.If) and node.orelse and len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
+                node = node.orelse[0]
+            else:
+                break
+        return count
+
+    def _test_is_isinstance(self, test):
+        """Check if a test expression is isinstance(x, ...)."""
+        if test is None:
+            return False
+        if isinstance(test, ast.Call):
+            if isinstance(test.func, ast.Name) and test.func.id == 'isinstance':
+                return True
+        return False
+
+
 def _set_parents(tree: ast.AST):
     """Annotate each node with a reference to its parent."""
     for node in ast.walk(tree):

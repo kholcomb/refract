@@ -636,6 +636,191 @@ func (c *checker) checkInitSideEffects(file *ast.File) {
 }
 
 // ============================================================================
+// CHECK: defer in loop
+// ============================================================================
+
+func (c *checker) checkDeferInLoop(file *ast.File) {
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			// Look for for/range loops
+			var loopBody *ast.BlockStmt
+			switch stmt := n.(type) {
+			case *ast.ForStmt:
+				loopBody = stmt.Body
+			case *ast.RangeStmt:
+				loopBody = stmt.Body
+			default:
+				return true
+			}
+			// Check if defer appears in the loop body
+			ast.Inspect(loopBody, func(inner ast.Node) bool {
+				deferStmt, ok := inner.(*ast.DeferStmt)
+				if !ok {
+					return true
+				}
+				pos := c.fset.Position(deferStmt.Pos())
+				funcName := exprName(deferStmt.Call.Fun)
+				c.add(Finding{
+					Antipattern:     "defer_in_loop",
+					AntipatternName: "Defer in Loop",
+					Category:        "code_structure",
+					Severity:        "high",
+					Confidence:      0.95,
+					LineStart:       pos.Line,
+					LineEnd:         pos.Line,
+					Message:         fmt.Sprintf("defer %s() inside a loop. Deferred calls only execute when the function returns, not at the end of each iteration. This causes resource leaks.", funcName),
+					Remediation:     "Move the deferred call into a helper function called per iteration, or close the resource explicitly at the end of each loop body.",
+					Effort:          "minutes",
+					RuleID:          "go/defer-in-loop",
+					References:      []string{"https://go.dev/doc/effective_go#defer"},
+					Tags:            []string{"resource-leak", "reliability"},
+				})
+				return false // don't descend further into this defer
+			})
+			return true
+		})
+	}
+}
+
+// ============================================================================
+// CHECK: errors.New(fmt.Sprintf(...)) instead of fmt.Errorf
+// ============================================================================
+
+func (c *checker) checkErrorStringFormat(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		// errors.New(fmt.Sprintf(...))
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "New" {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || pkg.Name != "errors" {
+			return true
+		}
+		if len(call.Args) != 1 {
+			return true
+		}
+		innerCall, ok := call.Args[0].(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		innerSel, ok := innerCall.Fun.(*ast.SelectorExpr)
+		if !ok || innerSel.Sel.Name != "Sprintf" {
+			return true
+		}
+		innerPkg, ok := innerSel.X.(*ast.Ident)
+		if !ok || innerPkg.Name != "fmt" {
+			return true
+		}
+
+		pos := c.fset.Position(call.Pos())
+		c.add(Finding{
+			Antipattern:     "error_string_format",
+			AntipatternName: "Verbose Error Construction",
+			Category:        "code_structure",
+			Severity:        "low",
+			Confidence:      1.0,
+			LineStart:       pos.Line,
+			LineEnd:         pos.Line,
+			Message:         "errors.New(fmt.Sprintf(...)) should be fmt.Errorf(...). Simpler and supports %w for error wrapping.",
+			Remediation:     "Replace with fmt.Errorf() which combines formatting and error creation. Use %w to wrap underlying errors.",
+			Effort:          "minutes",
+			RuleID:          "go/error-string-format",
+			Tags:            []string{"go-idiom", "readability"},
+		})
+		return true
+	})
+}
+
+// ============================================================================
+// CHECK: Loop variable captured by goroutine closure
+// ============================================================================
+
+func (c *checker) checkGoroutineClosureCapture(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		var loopVar string
+		var loopBody *ast.BlockStmt
+
+		switch stmt := n.(type) {
+		case *ast.RangeStmt:
+			if ident, ok := stmt.Key.(*ast.Ident); ok && ident.Name != "_" {
+				loopVar = ident.Name
+			}
+			if loopVar == "" {
+				if ident, ok := stmt.Value.(*ast.Ident); ok && ident.Name != "_" {
+					loopVar = ident.Name
+				}
+			}
+			loopBody = stmt.Body
+		case *ast.ForStmt:
+			// for i := 0; ... pattern
+			if assign, ok := stmt.Init.(*ast.AssignStmt); ok && len(assign.Lhs) > 0 {
+				if ident, ok := assign.Lhs[0].(*ast.Ident); ok {
+					loopVar = ident.Name
+				}
+			}
+			loopBody = stmt.Body
+		default:
+			return true
+		}
+
+		if loopVar == "" || loopBody == nil {
+			return true
+		}
+
+		// Look for go func() { ... loopVar ... }() inside the loop
+		ast.Inspect(loopBody, func(inner ast.Node) bool {
+			goStmt, ok := inner.(*ast.GoStmt)
+			if !ok {
+				return true
+			}
+			// Check if the goroutine closure references loopVar
+			funcLit, ok := goStmt.Call.Fun.(*ast.FuncLit)
+			if !ok {
+				return true
+			}
+			captures := false
+			ast.Inspect(funcLit.Body, func(bodyNode ast.Node) bool {
+				ident, ok := bodyNode.(*ast.Ident)
+				if ok && ident.Name == loopVar {
+					captures = true
+					return false
+				}
+				return true
+			})
+			if captures {
+				pos := c.fset.Position(goStmt.Pos())
+				c.add(Finding{
+					Antipattern:     "goroutine_closure_capture",
+					AntipatternName: "Loop Variable Captured by Goroutine",
+					Category:        "concurrency",
+					Severity:        "high",
+					Confidence:      0.9,
+					LineStart:       pos.Line,
+					LineEnd:         pos.Line,
+					Message:         fmt.Sprintf("Goroutine closure captures loop variable '%s'. All goroutines will see the final value of '%s', not the value at iteration time.", loopVar, loopVar),
+					Remediation:     fmt.Sprintf("Pass '%s' as an argument to the closure: go func(%s type) { ... }(%s)", loopVar, loopVar, loopVar),
+					Effort:          "minutes",
+					RuleID:          "go/goroutine-closure-capture",
+					References:      []string{"https://go.dev/doc/faq#closures_and_goroutines"},
+					Tags:            []string{"concurrency", "bugs", "race-condition"},
+				})
+			}
+			return true
+		})
+		return true
+	})
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -723,6 +908,9 @@ func scanFile(fset *token.FileSet, filePath, repoRoot string) []Finding {
 	c.checkContextFirstParam(f)
 	c.checkLargeInterface(f)
 	c.checkInitSideEffects(f)
+	c.checkDeferInLoop(f)
+	c.checkErrorStringFormat(f)
+	c.checkGoroutineClosureCapture(f)
 
 	return c.findings
 }
