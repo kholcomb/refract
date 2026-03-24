@@ -1,7 +1,5 @@
 node_modules/
-dist/
 coverage/
-*.js.map
 *.tgz
 /tmp/
 
@@ -13,9 +11,10 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Build artifacts
+# Build artifacts (action dist is committed -- required by GitHub Actions)
 packages/core/dist/
 packages/core/tsconfig.tsbuildinfo
+packages/vscode/dist/
 
 # Tool caches
 .claude/
