@@ -61,7 +61,7 @@ jobs:
           confidence_threshold: '0.7'
 
           # Paths to ignore (comma-separated glob prefixes)
-          paths_ignore: 'tests/fixtures,vendor,migrations'
+          paths_ignore: 'tests/fixtures,packages/action/tests/fixtures,vendor,migrations'
 
       # Use outputs downstream (e.g. in AI agent jobs)
       - name: Log scan results

@@ -17,6 +17,7 @@ import json
 import os
 import sys
 import argparse
+import tempfile
 from dataclasses import dataclass, asdict, field
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -360,7 +361,7 @@ def scan_directory(
 def main():
     parser = argparse.ArgumentParser(description='Python AST anti-pattern checker')
     parser.add_argument('path', help='Root path to scan')
-    parser.add_argument('--output', default='/tmp/ast_findings.json')
+    parser.add_argument('--output', default='')
     parser.add_argument('--ignore', default='', help='Comma-separated ignore prefixes')
     parser.add_argument('--single-file', default='',
                         help='Scan only this specific file (IDE mode -- faster)')
@@ -379,10 +380,16 @@ def main():
         'count': len(findings),
     }
 
-    with open(args.output, 'w') as out:
+    if args.output:
+        output_path = args.output
+    else:
+        fd, output_path = tempfile.mkstemp(suffix='.json', prefix='ast_findings_')
+        os.close(fd)
+
+    with open(output_path, 'w') as out:
         json.dump(result, out, indent=2)
 
-    print(f"AST checker found {len(findings)} findings -> {args.output}")
+    print(f"AST checker found {len(findings)} findings -> {output_path}")
 
 
 if __name__ == '__main__':
