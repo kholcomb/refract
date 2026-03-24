@@ -3,11 +3,11 @@
   "displayName": "Anti-Pattern Detector",
   "description": "Real-time anti-pattern detection with AI agent-ready findings. The IDE layer of your CI pipeline.",
   "version": "0.1.0",
-  "publisher": "your-org",
+  "publisher": "kholcomb",
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/antipattern-detector"
+    "url": "https://github.com/kholcomb/refract"
   },
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Linters", "Other"],

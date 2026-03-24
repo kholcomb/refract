@@ -1,6 +1,6 @@
 name: 'Antipattern Detector'
 description: 'Detects code anti-patterns across languages and creates actionable GitHub issues and PR comments'
-author: 'your-org'
+author: 'kholcomb'
 
 branding:
   icon: 'alert-triangle'
