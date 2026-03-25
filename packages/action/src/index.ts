@@ -209,7 +209,7 @@ export function buildSummary(findings: Finding[]): ScanSummary {
     SEVERITY_ORDER.map((s: Severity) => [s, findings.filter((f: Finding) => f.severity === s).length])
   ) as Record<Severity, number>
 
-  const byCat: Record<string, number> = {}
+  const byCat: Partial<Record<AntipatternCategory, number>> = {}
   const byLang: Record<string, number> = {}
   const files = new Set<string>()
 
@@ -222,7 +222,7 @@ export function buildSummary(findings: Finding[]): ScanSummary {
   return {
     total: findings.length,
     by_severity: bySev,
-    by_category: byCat as any,
+    by_category: byCat as Record<AntipatternCategory, number>,
     by_language: byLang,
     files_affected: files.size,
   }
