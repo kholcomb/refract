@@ -7,10 +7,11 @@ import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { Finding, AntipatternCategory, Severity, getActionRoot } from '@refract/core'
+import { Finding, AntipatternCategory, Severity, getActionRoot, loadThresholds, Thresholds } from '@refract/core'
 import { runGitleaks } from '../shared-scanners'
 
 const PACK_VERSION = 'go_v1'
+let thresholds: Thresholds
 
 export interface GoScanOptions {
   workspacePath: string
@@ -23,6 +24,8 @@ export async function scanGo(options: GoScanOptions): Promise<Finding[]> {
   const findings: Finding[] = []
 
   core.info('[go] Running Go language pack...')
+
+  thresholds = loadThresholds('go', options.workspacePath)
 
   if (options.categories.includes('code_structure')) {
     findings.push(...await runStructureChecks(options))
@@ -52,18 +55,24 @@ async function runStructureChecks(options: GoScanOptions): Promise<Finding[]> {
   const astScriptPath = path.join(getActionRoot(), 'language-packs/go/scripts/ast_checks.go')
   const outputPath = path.join(os.tmpdir(), 'go_ast_findings.json')
 
+  // Write thresholds to temp file for sidecar consumption
+  const thresholdsPath = path.join(os.tmpdir(), 'go_thresholds.json')
+  fs.writeFileSync(thresholdsPath, JSON.stringify(thresholds))
+
   // Prefer compiled binary, fall back to go run
   let astCmd: string
   let astArgs: string[]
   if (fs.existsSync(astBinaryPath)) {
     astCmd = astBinaryPath
     astArgs = [options.workspacePath, '--output', outputPath,
-               '--ignore', options.ignorePaths.join(',')]
+               '--ignore', options.ignorePaths.join(','),
+               '--thresholds-json', thresholdsPath]
   } else if (fs.existsSync(astScriptPath)) {
     astCmd = 'go'
     astArgs = ['run', astScriptPath, options.workspacePath,
                '--output', outputPath,
-               '--ignore', options.ignorePaths.join(',')]
+               '--ignore', options.ignorePaths.join(','),
+               '--thresholds-json', thresholdsPath]
   } else {
     core.warning('Go AST checker not found, skipping structure checks')
     return findings
@@ -84,7 +93,9 @@ async function runStructureChecks(options: GoScanOptions): Promise<Finding[]> {
   await runCommand(
     'lizard',
     [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_go_output.json'),
-     '--json', '-l', 'golang', '--length', '50', '--CCN', '10'],
+     '--json', '-l', 'golang',
+     '--length', String(thresholds.code_structure.max_function_length),
+     '--CCN', String(thresholds.code_structure.max_cyclomatic_complexity)],
     { ignoreReturnCode: true }
   )
 
@@ -104,25 +115,26 @@ function parseLizardOutput(data: any, workspacePath: string): Finding[] {
   const findings: Finding[] = []
   const now = new Date().toISOString()
 
+  const cs = thresholds.code_structure
   for (const file of data?.function_list ?? []) {
     const relPath = path.relative(workspacePath, file.filename)
 
-    if (file.length > 50) {
+    if (file.length > cs.max_function_length) {
       findings.push({
         id: generateId(),
         antipattern: 'long_method',
         antipattern_name: 'Long Function',
         category: 'code_structure',
-        severity: file.length > 150 ? 'high' : 'medium',
+        severity: file.length > cs.max_function_length * 3 ? 'high' : 'medium',
         confidence: 0.95,
         file: relPath,
         line_start: file.start_line,
         line_end: file.end_line,
         language: 'go',
         language_pack: PACK_VERSION,
-        message: `Function '${file.name}' is ${file.length} lines long (threshold: 50)`,
+        message: `Function '${file.name}' is ${file.length} lines long (threshold: ${cs.max_function_length})`,
         remediation: `Break '${file.name}' into smaller functions with single responsibilities.`,
-        effort: file.length > 150 ? 'days' : 'hours',
+        effort: file.length > cs.max_function_length * 3 ? 'days' : 'hours',
         tool: 'lizard',
         rule_id: 'go/long-function',
         tags: ['maintainability'],
@@ -130,20 +142,20 @@ function parseLizardOutput(data: any, workspacePath: string): Finding[] {
       })
     }
 
-    if (file.cyclomatic_complexity > 10) {
+    if (file.cyclomatic_complexity > cs.max_cyclomatic_complexity) {
       findings.push({
         id: generateId(),
         antipattern: 'high_cyclomatic_complexity',
         antipattern_name: 'High Cyclomatic Complexity',
         category: 'code_structure',
-        severity: file.cyclomatic_complexity > 20 ? 'high' : 'medium',
+        severity: file.cyclomatic_complexity > cs.max_cyclomatic_complexity * 2 ? 'high' : 'medium',
         confidence: 1.0,
         file: relPath,
         line_start: file.start_line,
         line_end: file.end_line,
         language: 'go',
         language_pack: PACK_VERSION,
-        message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: 10)`,
+        message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: ${cs.max_cyclomatic_complexity})`,
         remediation: `Reduce branching with early returns, table-driven logic, or extracted helper functions.`,
         effort: 'hours',
         tool: 'lizard',

@@ -30,6 +30,19 @@ import (
 
 const packVersion = "go_v1"
 
+// Configurable thresholds -- overwritten by --thresholds-json if provided
+var thresholds = struct {
+	MaxNestingDepth      int
+	GodStructMethodCount int
+	MaxInterfaceMethods  int
+	MagicNumberAllowed   map[string]bool
+}{
+	MaxNestingDepth:      5,
+	GodStructMethodCount: 15,
+	MaxInterfaceMethods:  5,
+	MagicNumberAllowed:   map[string]bool{"0": true, "1": true, "-1": true},
+}
+
 // Finding matches the @refract/core Finding schema exactly.
 type Finding struct {
 	ID              string   `json:"id"`
@@ -216,11 +229,11 @@ func (c *checker) checkDeepNesting(file *ast.File) {
 		fn, ok := decl.(*ast.FuncDecl)
 		if ok && fn.Body != nil {
 			maxDepth := nestingDepth(fn.Body, 0)
-			if maxDepth >= 5 {
+			if maxDepth >= thresholds.MaxNestingDepth {
 				pos := c.fset.Position(fn.Pos())
 				endPos := c.fset.Position(fn.End())
 				sev := "medium"
-				if maxDepth >= 7 {
+				if maxDepth >= thresholds.MaxNestingDepth+2 {
 					sev = "high"
 				}
 				c.add(Finding{
@@ -231,7 +244,7 @@ func (c *checker) checkDeepNesting(file *ast.File) {
 					Confidence:      0.85,
 					LineStart:       pos.Line,
 					LineEnd:         endPos.Line,
-					Message:         fmt.Sprintf("Function '%s' has nesting depth of %d (threshold: 5).", fn.Name.Name, maxDepth),
+					Message:         fmt.Sprintf("Function '%s' has nesting depth of %d (threshold: %d).", fn.Name.Name, maxDepth, thresholds.MaxNestingDepth),
 					Remediation:     "Reduce nesting with early returns, extracted helper functions, or table-driven logic.",
 					Effort:          "hours",
 					RuleID:          "go/deep-nesting",
@@ -346,10 +359,10 @@ func (c *checker) checkGodStruct(file *ast.File) {
 	}
 
 	for typeName, positions := range methods {
-		if len(positions) > 15 {
+		if len(positions) > thresholds.GodStructMethodCount {
 			pos := c.fset.Position(positions[0])
 			sev := "medium"
-			if len(positions) > 30 {
+			if len(positions) > thresholds.GodStructMethodCount*2 {
 				sev = "high"
 			}
 			c.add(Finding{
@@ -377,9 +390,7 @@ func (c *checker) checkGodStruct(file *ast.File) {
 
 // Only truly trivial values are unconditionally allowed.
 // Everything else is filtered by context, not by value.
-var trivialNumbers = map[string]bool{
-	"0": true, "1": true, "-1": true,
-}
+// trivialNumbers is now populated from thresholds.MagicNumberAllowed
 
 func (c *checker) checkMagicNumbers(file *ast.File) {
 	// Collect positions to skip: const blocks and var declarations with names
@@ -436,7 +447,7 @@ func (c *checker) checkMagicNumbers(file *ast.File) {
 		if !ok || (lit.Kind != token.INT && lit.Kind != token.FLOAT) {
 			return true
 		}
-		if trivialNumbers[lit.Value] {
+		if thresholds.MagicNumberAllowed[lit.Value] {
 			return true
 		}
 		if skipPositions[lit.Pos()] {
@@ -576,10 +587,10 @@ func (c *checker) checkLargeInterface(file *ast.File) {
 		}
 
 		methodCount := len(iface.Methods.List)
-		if methodCount > 5 {
+		if methodCount > thresholds.MaxInterfaceMethods {
 			pos := c.fset.Position(typeSpec.Pos())
 			sev := "medium"
-			if methodCount > 10 {
+			if methodCount > thresholds.MaxInterfaceMethods*2 {
 				sev = "high"
 			}
 			c.add(Finding{
@@ -1117,9 +1128,43 @@ func scanDirectory(root string, ignorePrefixes []string) []Finding {
 // CLI
 // ============================================================================
 
+func loadThresholds(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var raw struct {
+		CodeStructure struct {
+			MaxNestingDepth      *int    `json:"max_nesting_depth"`
+			GodClassMethodCount  *int    `json:"god_class_method_count"`
+			MaxInterfaceMethods  *int    `json:"max_interface_methods"`
+			MagicNumberAllowed   []int   `json:"magic_number_allowed"`
+		} `json:"code_structure"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	cs := raw.CodeStructure
+	if cs.MaxNestingDepth != nil {
+		thresholds.MaxNestingDepth = *cs.MaxNestingDepth
+	}
+	if cs.GodClassMethodCount != nil {
+		thresholds.GodStructMethodCount = *cs.GodClassMethodCount
+	}
+	if cs.MaxInterfaceMethods != nil {
+		thresholds.MaxInterfaceMethods = *cs.MaxInterfaceMethods
+	}
+	if cs.MagicNumberAllowed != nil {
+		thresholds.MagicNumberAllowed = make(map[string]bool)
+		for _, n := range cs.MagicNumberAllowed {
+			thresholds.MagicNumberAllowed[fmt.Sprintf("%d", n)] = true
+		}
+	}
+}
+
 func main() {
 	// Manual arg parsing to support both `<path> --output <file>` and `--output <file> <path>`
-	var rootPath, outputArg, ignoreArg string
+	var rootPath, outputArg, ignoreArg, thresholdsArg string
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -1133,11 +1178,21 @@ func main() {
 				ignoreArg = args[i+1]
 				i++
 			}
+		case "--thresholds-json":
+			if i+1 < len(args) {
+				thresholdsArg = args[i+1]
+				i++
+			}
 		default:
 			if !strings.HasPrefix(args[i], "-") && rootPath == "" {
 				rootPath = args[i]
 			}
 		}
+	}
+
+	// Load thresholds from JSON file if provided
+	if thresholdsArg != "" {
+		loadThresholds(thresholdsArg)
 	}
 
 	if rootPath == "" {

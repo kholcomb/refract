@@ -24,6 +24,25 @@ from datetime import datetime, timezone
 
 PACK_VERSION = "python_v1"
 
+# Thresholds loaded from config; overwritten by --thresholds-json if provided
+THRESHOLDS = {
+    'code_structure': {
+        'max_cyclomatic_complexity': 10,
+        'max_function_length': 50,
+        'max_nesting_depth': 4,
+        'god_class_method_count': 20,
+        'god_class_total_lines': 500,
+        'magic_number_allowed': [0, 1, -1, 2, 100],
+    },
+    'test_quality': {
+        'min_coverage_percent': 50,
+        'max_mock_calls': 5,
+    },
+    'security': {
+        'bandit_severity_level': 'medium',
+    },
+}
+
 
 @dataclass
 class Finding:
@@ -184,7 +203,8 @@ class AntiPatternVisitor(ast.NodeVisitor):
 
         # --- Cognitive complexity (checked first so nesting can defer to it) ---
         cog = self._cognitive_complexity(node)
-        cc_fired = cog >= 20
+        cog_threshold = THRESHOLDS['code_structure'].get('max_cyclomatic_complexity', 10) * 2  # cognitive ~2x cyclomatic
+        cc_fired = cog >= cog_threshold
 
         if cc_fired:
             self.findings.append(Finding(
@@ -192,7 +212,7 @@ class AntiPatternVisitor(ast.NodeVisitor):
                 antipattern='high_cyclomatic_complexity',
                 antipattern_name='High Cognitive Complexity',
                 category='code_structure',
-                severity='medium' if cog < 25 else 'high',
+                severity='medium' if cog < cog_threshold * 1.25 else 'high',
                 confidence=0.9,
                 file=self.filepath,
                 line_start=node.lineno,
@@ -215,14 +235,15 @@ class AntiPatternVisitor(ast.NodeVisitor):
 
         # --- Nesting depth (suppressed if CC already reported on this function) ---
         if not cc_fired:
-            threshold = 6 if is_recursive else 5
+            base_depth = THRESHOLDS['code_structure'].get('max_nesting_depth', 4)
+            threshold = base_depth + 2 if is_recursive else base_depth + 1
             if counter.max_depth >= threshold:
                 self.findings.append(Finding(
                     id=make_id(),
                     antipattern='deep_nesting',
                     antipattern_name='Deep Nesting',
                     category='code_structure',
-                    severity='medium' if counter.max_depth < 7 else 'high',
+                    severity='medium' if counter.max_depth < threshold + 2 else 'high',
                     confidence=0.85,
                     file=self.filepath,
                     line_start=node.lineno,
@@ -413,7 +434,8 @@ class AntiPatternVisitor(ast.NodeVisitor):
             return
 
         # Trivial values -- too common in arithmetic to be meaningful
-        if node.value in (0, 1, -1, 2):
+        allowed = THRESHOLDS['code_structure'].get('magic_number_allowed', [0, 1, -1, 2, 100])
+        if node.value in allowed:
             self.generic_visit(node)
             return
 
@@ -982,7 +1004,20 @@ def main():
     parser.add_argument('--ignore', default='', help='Comma-separated ignore prefixes')
     parser.add_argument('--single-file', default='',
                         help='Scan only this specific file (IDE mode -- faster)')
+    parser.add_argument('--thresholds-json', default='',
+                        help='Path to thresholds JSON file from orchestrator')
     args = parser.parse_args()
+
+    # Load thresholds from JSON if provided
+    if args.thresholds_json and os.path.isfile(args.thresholds_json):
+        try:
+            with open(args.thresholds_json) as tf:
+                loaded = json.load(tf)
+            for section in THRESHOLDS:
+                if section in loaded:
+                    THRESHOLDS[section].update(loaded[section])
+        except (json.JSONDecodeError, IOError):
+            pass  # Fall back to defaults
 
     ignore = [p.strip() for p in args.ignore.split(',') if p.strip()]
 

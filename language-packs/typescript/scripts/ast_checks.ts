@@ -18,6 +18,18 @@ import * as path from 'path'
 
 const PACK_VERSION = 'typescript_v1'
 
+// Thresholds loaded from config; overwritten by --thresholds-json if provided
+const THRESHOLDS: Record<string, Record<string, any>> = {
+  code_structure: {
+    max_nesting_depth: 4,
+    god_class_method_count: 15,
+    magic_number_allowed: [0, 1, -1, 2, 100],
+  },
+  test_quality: {
+    max_mock_calls: 5,
+  },
+}
+
 interface Finding {
   id: string
   antipattern: string
@@ -107,7 +119,8 @@ function checkDeepNesting(
 
     countNesting(body, 0)
 
-    if (maxDepth >= 4) {
+    const nestingThreshold = THRESHOLDS.code_structure.max_nesting_depth ?? 4
+    if (maxDepth >= nestingThreshold) {
       const funcName = getFunctionName(node)
       const startLine = node.loc.start.line
       const endLine = node.loc.end.line
@@ -118,7 +131,7 @@ function checkDeepNesting(
         antipattern: 'deep_nesting',
         antipattern_name: 'Deep Nesting',
         category: 'code_structure',
-        severity: maxDepth >= 6 ? 'high' : 'medium',
+        severity: maxDepth >= nestingThreshold + 2 ? 'high' : 'medium',
         confidence: 0.9,
         file: filePath,
         line_start: startLine,
@@ -332,7 +345,8 @@ function checkExcessiveMocking(
     }
   })
 
-  if (mockCount > 5) {
+  const maxMocks = THRESHOLDS.test_quality.max_mock_calls ?? 5
+  if (mockCount > maxMocks) {
     findings.push({
       id: makeId(),
       antipattern: 'excessive_mocking',
@@ -377,14 +391,15 @@ function checkGodClass(
     )
     const methodCount = methods.filter(m => m.type === AST_NODE_TYPES.MethodDefinition).length
 
-    if (methodCount > 15) {
+    const godClassThreshold = THRESHOLDS.code_structure.god_class_method_count ?? 15
+    if (methodCount > godClassThreshold) {
       const className = classNode.id?.name ?? '<anonymous>'
       findings.push({
         id: makeId(),
         antipattern: 'god_class',
         antipattern_name: 'God Class',
         category: 'code_structure',
-        severity: methodCount > 30 ? 'high' : 'medium',
+        severity: methodCount > godClassThreshold * 2 ? 'high' : 'medium',
         confidence: 0.85,
         file: filePath,
         line_start: node.loc.start.line,
@@ -1047,6 +1062,13 @@ function main(): void {
       outputPath = args[++i]
     } else if (args[i] === '--ignore' && args[i + 1]) {
       ignorePrefixes = args[++i].split(',').filter(Boolean)
+    } else if (args[i] === '--thresholds-json' && args[i + 1]) {
+      try {
+        const loaded = JSON.parse(fs.readFileSync(args[++i], 'utf-8'))
+        for (const section of Object.keys(THRESHOLDS)) {
+          if (loaded[section]) Object.assign(THRESHOLDS[section], loaded[section])
+        }
+      } catch {}
     }
   }
 
