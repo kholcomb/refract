@@ -35289,6 +35289,8 @@ exports.buildSummary = buildSummary;
 const core = __importStar(__nccwpck_require__(7184));
 const github = __importStar(__nccwpck_require__(8064));
 const fs = __importStar(__nccwpck_require__(9896));
+const os = __importStar(__nccwpck_require__(857));
+const path = __importStar(__nccwpck_require__(6928));
 const language_detector_1 = __nccwpck_require__(2778);
 const python_1 = __nccwpck_require__(5373);
 const typescript_1 = __nccwpck_require__(6752);
@@ -35310,7 +35312,7 @@ async function run() {
         const stepSummary = core.getInput('step_summary') === 'true';
         const slackWebhook = core.getInput('slack_webhook_url');
         const issueLabel = core.getInput('issue_label');
-        const confidenceStr = parseFloat(core.getInput('confidence_threshold'));
+        const confidenceStr = Math.max(0, Math.min(1, parseFloat(core.getInput('confidence_threshold')) || 0.7));
         const pathsIgnore = core.getInput('paths_ignore')
             .split(',').map(s => s.trim()).filter(Boolean);
         const categories = categoriesInput
@@ -35373,7 +35375,11 @@ async function run() {
         }
         // --- Filter by ignored paths (safety net for tools that don't support exclusion) ---
         const pathFilteredFindings = pathsIgnore.length > 0
-            ? allFindings.filter(f => !pathsIgnore.some(p => f.file.startsWith(p)))
+            ? allFindings.filter(f => !pathsIgnore.some(p => {
+                // Support both prefix matches (tests/) and substring matches (src/tests/)
+                const normalized = p.replace(/\*\*/g, '').replace(/\*/g, '').replace(/^\/|\/$/g, '');
+                return normalized && (f.file.startsWith(normalized) || f.file.includes('/' + normalized));
+            }))
             : allFindings;
         // --- Filter by severity threshold ---
         const thresholdIndex = core_1.SEVERITY_ORDER.indexOf(severityThresh);
@@ -35399,7 +35405,7 @@ async function run() {
         const summary = buildSummary(filteredFindings);
         const result = { meta, findings: filteredFindings, summary };
         // --- Write JSON report ---
-        const reportPath = '/tmp/antipattern-report.json';
+        const reportPath = path.join(os.tmpdir(), 'antipattern-report.json');
         fs.writeFileSync(reportPath, JSON.stringify(result, null, 2));
         core.info(`[report] Report written to ${reportPath}`);
         // --- Outputs ---
@@ -35615,7 +35621,9 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.scanGo = scanGo;
 const core = __importStar(__nccwpck_require__(7184));
 const exec = __importStar(__nccwpck_require__(9192));
+const crypto = __importStar(__nccwpck_require__(6982));
 const fs = __importStar(__nccwpck_require__(9896));
+const os = __importStar(__nccwpck_require__(857));
 const path = __importStar(__nccwpck_require__(6928));
 const core_1 = __nccwpck_require__(5026);
 const shared_scanners_1 = __nccwpck_require__(7010);
@@ -35644,7 +35652,7 @@ async function runStructureChecks(options) {
     // Custom AST-based checks via compiled Go binary
     const astBinaryPath = path.join((0, core_1.getActionRoot)(), 'language-packs/go/scripts/ast_checks');
     const astScriptPath = path.join((0, core_1.getActionRoot)(), 'language-packs/go/scripts/ast_checks.go');
-    const outputPath = '/tmp/go_ast_findings.json';
+    const outputPath = path.join(os.tmpdir(), 'go_ast_findings.json');
     // Prefer compiled binary, fall back to go run
     let astCmd;
     let astArgs;
@@ -35665,15 +35673,25 @@ async function runStructureChecks(options) {
     }
     await runCommand(astCmd, astArgs, { ignoreReturnCode: true });
     if (fs.existsSync(outputPath)) {
-        const data = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
-        findings.push(...data.findings ?? []);
+        try {
+            const data = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
+            findings.push(...data.findings ?? []);
+        }
+        catch (e) {
+            core.warning(`Failed to parse Go AST findings: ${e}`);
+        }
     }
     // Lizard for complexity (supports Go)
-    await runCommand('lizard', [options.workspacePath, '--output-file', '/tmp/lizard_go_output.json',
+    await runCommand('lizard', [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_go_output.json'),
         '--json', '-l', 'golang', '--length', '50', '--CCN', '10'], { ignoreReturnCode: true });
-    if (fs.existsSync('/tmp/lizard_go_output.json')) {
-        const data = JSON.parse(fs.readFileSync('/tmp/lizard_go_output.json', 'utf-8'));
-        findings.push(...parseLizardOutput(data, options.workspacePath));
+    if (fs.existsSync(path.join(os.tmpdir(), 'lizard_go_output.json'))) {
+        try {
+            const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_go_output.json'), 'utf-8'));
+            findings.push(...parseLizardOutput(data, options.workspacePath));
+        }
+        catch (e) {
+            core.warning(`Failed to parse lizard output: ${e}`);
+        }
     }
     return findings;
 }
@@ -35737,10 +35755,10 @@ async function runSecurityChecks(options) {
     const goExtensions = new Set(['.go']);
     findings.push(...await (0, shared_scanners_1.runGitleaks)(options.workspacePath, PACK_VERSION, 'go', goExtensions));
     // gosec (Apache 2.0)
-    const gosecOutput = await runCommand('gosec', ['-fmt', 'json', '-out', '/tmp/gosec.json', '-severity', 'medium', '-quiet', './...'], { ignoreReturnCode: true, cwd: options.workspacePath });
-    if (fs.existsSync('/tmp/gosec.json')) {
+    const gosecOutput = await runCommand('gosec', ['-fmt', 'json', '-out', path.join(os.tmpdir(), 'gosec.json'), '-severity', 'medium', '-quiet', './...'], { ignoreReturnCode: true, cwd: options.workspacePath });
+    if (fs.existsSync(path.join(os.tmpdir(), 'gosec.json'))) {
         try {
-            const data = JSON.parse(fs.readFileSync('/tmp/gosec.json', 'utf-8'));
+            const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'gosec.json'), 'utf-8'));
             findings.push(...parseGosecOutput(data, options.workspacePath));
         }
         catch {
@@ -35884,7 +35902,7 @@ async function runCommand(cmd, args, options = {}) {
     return { stdout, stderr, exitCode };
 }
 function generateId() {
-    return Math.random().toString(36).substring(2, 11);
+    return crypto.randomUUID().replace(/-/g, '').substring(0, 9);
 }
 //# sourceMappingURL=go.js.map
 
@@ -35932,7 +35950,9 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.scanPython = scanPython;
 const core = __importStar(__nccwpck_require__(7184));
 const exec = __importStar(__nccwpck_require__(9192));
+const crypto = __importStar(__nccwpck_require__(6982));
 const fs = __importStar(__nccwpck_require__(9896));
+const os = __importStar(__nccwpck_require__(857));
 const path = __importStar(__nccwpck_require__(6928));
 const core_1 = __nccwpck_require__(5026);
 const shared_scanners_1 = __nccwpck_require__(7010);
@@ -35963,20 +35983,30 @@ async function runStructureChecks(options) {
     // Install lizard for complexity analysis
     await exec.exec('pip', ['install', '--quiet', 'lizard'], { silent: true })
         .catch(() => core.warning('lizard install failed, skipping complexity checks'));
-    const lizardOutput = await runCommand('lizard', [options.workspacePath, '--output-file', '/tmp/lizard_output.json',
+    const lizardOutput = await runCommand('lizard', [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_output.json'),
         '--json', '-l', 'python', '--length', '50', '--CCN', '10'], { ignoreReturnCode: true });
-    if (fs.existsSync('/tmp/lizard_output.json')) {
-        const data = JSON.parse(fs.readFileSync('/tmp/lizard_output.json', 'utf-8'));
-        findings.push(...parseLizardOutput(data, options.workspacePath));
+    if (fs.existsSync(path.join(os.tmpdir(), 'lizard_output.json'))) {
+        try {
+            const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_output.json'), 'utf-8'));
+            findings.push(...parseLizardOutput(data, options.workspacePath));
+        }
+        catch (e) {
+            core.warning(`Failed to parse lizard output: ${e}`);
+        }
     }
     // Custom AST-based checks using Python script
     const customScriptPath = path.join((0, core_1.getActionRoot)(), 'language-packs/python/scripts/ast_checks.py');
     if (fs.existsSync(customScriptPath)) {
-        const astOutput = await runCommand('python3', [customScriptPath, options.workspacePath, '--output', '/tmp/ast_findings.json',
+        const astOutput = await runCommand('python3', [customScriptPath, options.workspacePath, '--output', path.join(os.tmpdir(), 'ast_findings.json'),
             '--ignore', options.ignorePaths.join(',')], { ignoreReturnCode: true });
-        if (fs.existsSync('/tmp/ast_findings.json')) {
-            const data = JSON.parse(fs.readFileSync('/tmp/ast_findings.json', 'utf-8'));
-            findings.push(...data.findings ?? []);
+        if (fs.existsSync(path.join(os.tmpdir(), 'ast_findings.json'))) {
+            try {
+                const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'ast_findings.json'), 'utf-8'));
+                findings.push(...data.findings ?? []);
+            }
+            catch (e) {
+                core.warning(`Failed to parse AST findings: ${e}`);
+            }
         }
     }
     return findings;
@@ -36082,15 +36112,20 @@ async function runSecurityChecks(options) {
     // Bandit for Python-specific security issues (Apache 2.0)
     await exec.exec('pip', ['install', '--quiet', 'bandit'], { silent: true })
         .catch(() => core.warning('bandit install failed'));
-    const banditArgs = ['-r', options.workspacePath, '-f', 'json', '-o', '/tmp/bandit.json',
+    const banditArgs = ['-r', options.workspacePath, '-f', 'json', '-o', path.join(os.tmpdir(), 'bandit.json'),
         '--severity-level', 'medium', '-q'];
     if (options.ignorePaths.length > 0) {
         banditArgs.push('--exclude', options.ignorePaths.map(p => path.join(options.workspacePath, p)).join(','));
     }
     await runCommand('bandit', banditArgs, { ignoreReturnCode: true });
-    if (fs.existsSync('/tmp/bandit.json')) {
-        const banditData = JSON.parse(fs.readFileSync('/tmp/bandit.json', 'utf-8'));
-        findings.push(...parseBanditOutput(banditData, options.workspacePath));
+    if (fs.existsSync(path.join(os.tmpdir(), 'bandit.json'))) {
+        try {
+            const banditData = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'bandit.json'), 'utf-8'));
+            findings.push(...parseBanditOutput(banditData, options.workspacePath));
+        }
+        catch (e) {
+            core.warning(`Failed to parse bandit output: ${e}`);
+        }
     }
     return findings;
 }
@@ -36204,37 +36239,42 @@ async function runDependencyChecks(options) {
             core.warning(`Failed to parse osv-scanner output: ${e}`);
         }
     }
-    // pip-audit for Python-specific vuln scanning
+    // pip-audit for Python-specific vuln scanning (uses @actions/exec = execFile, no shell)
     await exec.exec('pip', ['install', '--quiet', 'pip-audit'], { silent: true })
-        .catch(() => { });
-    await runCommand('pip-audit', ['--format', 'json', '--output', '/tmp/pip_audit.json', '-r',
+        .catch(() => core.warning('pip-audit install failed, skipping Python dependency audit'));
+    await runCommand('pip-audit', ['--format', 'json', '--output', path.join(os.tmpdir(), 'pip_audit.json'), '-r',
         path.join(options.workspacePath, 'requirements.txt')], { ignoreReturnCode: true });
-    if (fs.existsSync('/tmp/pip_audit.json')) {
-        const data = JSON.parse(fs.readFileSync('/tmp/pip_audit.json', 'utf-8'));
-        for (const dep of data?.dependencies ?? []) {
-            for (const vuln of dep?.vulns ?? []) {
-                findings.push({
-                    id: generateId(),
-                    antipattern: 'vulnerable_dependency',
-                    antipattern_name: 'Vulnerable Dependency',
-                    category: 'dependencies',
-                    severity: 'high',
-                    confidence: 1.0,
-                    file: 'requirements.txt',
-                    line_start: 1,
-                    line_end: 1,
-                    language: 'python',
-                    language_pack: PACK_VERSION,
-                    message: `${dep.name}==${dep.version} is vulnerable: ${vuln.id} - ${vuln.description}`,
-                    remediation: `Upgrade ${dep.name} to version ${vuln.fix_versions?.join(' or ')} or later.`,
-                    effort: 'hours',
-                    tool: 'pip-audit',
-                    rule_id: `pip-audit/${vuln.id}`,
-                    references: [vuln.link],
-                    tags: ['security', 'dependencies'],
-                    detected_at: now,
-                });
+    if (fs.existsSync(path.join(os.tmpdir(), 'pip_audit.json'))) {
+        try {
+            const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'pip_audit.json'), 'utf-8'));
+            for (const dep of data?.dependencies ?? []) {
+                for (const vuln of dep?.vulns ?? []) {
+                    findings.push({
+                        id: generateId(),
+                        antipattern: 'vulnerable_dependency',
+                        antipattern_name: 'Vulnerable Dependency',
+                        category: 'dependencies',
+                        severity: 'high',
+                        confidence: 1.0,
+                        file: 'requirements.txt',
+                        line_start: 1,
+                        line_end: 1,
+                        language: 'python',
+                        language_pack: PACK_VERSION,
+                        message: `${dep.name}==${dep.version} is vulnerable: ${vuln.id} - ${vuln.description}`,
+                        remediation: `Upgrade ${dep.name} to version ${vuln.fix_versions?.join(' or ')} or later.`,
+                        effort: 'hours',
+                        tool: 'pip-audit',
+                        rule_id: `pip-audit/${vuln.id}`,
+                        references: [vuln.link],
+                        tags: ['security', 'dependencies'],
+                        detected_at: now,
+                    });
+                }
             }
+        }
+        catch (e) {
+            core.warning(`Failed to parse pip-audit output: ${e}`);
         }
     }
     return findings;
@@ -36259,41 +36299,46 @@ async function runTestQualityChecks(options) {
     const findings = [];
     const now = new Date().toISOString();
     core.info('  -> Test quality checks (coverage, bare asserts, missing tests...)');
-    // pytest-cov for coverage
+    // pytest-cov for coverage (uses @actions/exec = execFile, no shell)
     await exec.exec('pip', ['install', '--quiet', 'pytest', 'pytest-cov'], { silent: true })
-        .catch(() => { });
+        .catch(() => core.warning('pytest/pytest-cov install failed, skipping coverage checks'));
     await runCommand('python3', ['-m', 'pytest', '--cov', options.workspacePath,
-        '--cov-report', 'json:/tmp/coverage.json', '-q', '--no-header'], { ignoreReturnCode: true, cwd: options.workspacePath });
-    if (fs.existsSync('/tmp/coverage.json')) {
-        const data = JSON.parse(fs.readFileSync('/tmp/coverage.json', 'utf-8'));
-        for (const [file, fileData] of Object.entries(data?.files ?? {})) {
-            const cov = fileData;
-            const pct = cov.summary?.percent_covered ?? 100;
-            // Skip test files themselves
-            if (file.includes('test_') || file.includes('_test.py'))
-                continue;
-            if (pct < 50) {
-                findings.push({
-                    id: generateId(),
-                    antipattern: 'missing_test_coverage',
-                    antipattern_name: 'Missing Test Coverage',
-                    category: 'test_quality',
-                    severity: pct < 20 ? 'high' : 'medium',
-                    confidence: 1.0,
-                    file: path.relative(options.workspacePath, file),
-                    line_start: 1,
-                    line_end: 1,
-                    language: 'python',
-                    language_pack: PACK_VERSION,
-                    message: `File has only ${pct.toFixed(1)}% test coverage (threshold: 50%). Uncovered lines: ${cov.missing_lines?.join(', ')}`,
-                    remediation: `Add unit tests covering the uncovered lines, especially for business logic and error paths. Focus on lines: ${(cov.missing_lines ?? []).slice(0, 10).join(', ')}`,
-                    effort: 'days',
-                    tool: 'pytest-cov',
-                    rule_id: 'python/low-coverage',
-                    tags: ['test_quality', 'coverage'],
-                    detected_at: now,
-                });
+        '--cov-report', `json:${path.join(os.tmpdir(), 'coverage.json')}`, '-q', '--no-header'], { ignoreReturnCode: true, cwd: options.workspacePath });
+    if (fs.existsSync(path.join(os.tmpdir(), 'coverage.json'))) {
+        try {
+            const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'coverage.json'), 'utf-8'));
+            for (const [file, fileData] of Object.entries(data?.files ?? {})) {
+                const cov = fileData;
+                const pct = cov.summary?.percent_covered ?? 100;
+                // Skip test files themselves
+                if (file.includes('test_') || file.includes('_test.py'))
+                    continue;
+                if (pct < 50) {
+                    findings.push({
+                        id: generateId(),
+                        antipattern: 'missing_test_coverage',
+                        antipattern_name: 'Missing Test Coverage',
+                        category: 'test_quality',
+                        severity: pct < 20 ? 'high' : 'medium',
+                        confidence: 1.0,
+                        file: path.relative(options.workspacePath, file),
+                        line_start: 1,
+                        line_end: 1,
+                        language: 'python',
+                        language_pack: PACK_VERSION,
+                        message: `File has only ${pct.toFixed(1)}% test coverage (threshold: 50%). Uncovered lines: ${cov.missing_lines?.join(', ')}`,
+                        remediation: `Add unit tests covering the uncovered lines, especially for business logic and error paths. Focus on lines: ${(cov.missing_lines ?? []).slice(0, 10).join(', ')}`,
+                        effort: 'days',
+                        tool: 'pytest-cov',
+                        rule_id: 'python/low-coverage',
+                        tags: ['test_quality', 'coverage'],
+                        detected_at: now,
+                    });
+                }
             }
+        }
+        catch (e) {
+            core.warning(`Failed to parse coverage output: ${e}`);
         }
     }
     return findings;
@@ -36316,7 +36361,7 @@ async function runCommand(cmd, args, options = {}) {
     return { stdout, stderr, exitCode };
 }
 function generateId() {
-    return Math.random().toString(36).substring(2, 11);
+    return crypto.randomUUID().replace(/-/g, '').substring(0, 9);
 }
 //# sourceMappingURL=python.js.map
 
@@ -36364,7 +36409,9 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.scanTypeScript = scanTypeScript;
 const core = __importStar(__nccwpck_require__(7184));
 const exec = __importStar(__nccwpck_require__(9192));
+const crypto = __importStar(__nccwpck_require__(6982));
 const fs = __importStar(__nccwpck_require__(9896));
+const os = __importStar(__nccwpck_require__(857));
 const path = __importStar(__nccwpck_require__(6928));
 const core_1 = __nccwpck_require__(5026);
 const shared_scanners_1 = __nccwpck_require__(7010);
@@ -36395,22 +36442,32 @@ async function runStructureChecks(options) {
     // Lizard supports JS/TS
     const lizardInstalled = await runCommand('pip', ['install', '--quiet', 'lizard'], { ignoreReturnCode: true });
     if (lizardInstalled.exitCode === 0) {
-        await runCommand('lizard', [options.workspacePath, '--output-file', '/tmp/lizard_ts_output.json',
+        await runCommand('lizard', [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_ts_output.json'),
             '--json', '-l', 'javascript', '--length', '50', '--CCN', '10'], { ignoreReturnCode: true });
-        if (fs.existsSync('/tmp/lizard_ts_output.json')) {
-            const data = JSON.parse(fs.readFileSync('/tmp/lizard_ts_output.json', 'utf-8'));
-            findings.push(...parseLizardOutput(data, options.workspacePath));
+        if (fs.existsSync(path.join(os.tmpdir(), 'lizard_ts_output.json'))) {
+            try {
+                const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_ts_output.json'), 'utf-8'));
+                findings.push(...parseLizardOutput(data, options.workspacePath));
+            }
+            catch (e) {
+                core.warning(`Failed to parse lizard output: ${e}`);
+            }
         }
     }
     // Custom AST-based checks via the sidecar script
     const astScriptPath = path.join((0, core_1.getActionRoot)(), 'language-packs/typescript/scripts/ast_checks.js');
     if (fs.existsSync(astScriptPath)) {
         await runCommand('node', [astScriptPath, options.workspacePath,
-            '--output', '/tmp/ts_ast_findings.json',
+            '--output', path.join(os.tmpdir(), 'ts_ast_findings.json'),
             '--ignore', options.ignorePaths.join(',')], { ignoreReturnCode: true });
-        if (fs.existsSync('/tmp/ts_ast_findings.json')) {
-            const data = JSON.parse(fs.readFileSync('/tmp/ts_ast_findings.json', 'utf-8'));
-            findings.push(...data.findings ?? []);
+        if (fs.existsSync(path.join(os.tmpdir(), 'ts_ast_findings.json'))) {
+            try {
+                const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'ts_ast_findings.json'), 'utf-8'));
+                findings.push(...data.findings ?? []);
+            }
+            catch (e) {
+                core.warning(`Failed to parse TS AST findings: ${e}`);
+            }
         }
     }
     return findings;
@@ -36652,7 +36709,7 @@ async function runCommand(cmd, args, options = {}) {
     return { stdout, stderr, exitCode };
 }
 function generateId() {
-    return Math.random().toString(36).substring(2, 11);
+    return crypto.randomUUID().replace(/-/g, '').substring(0, 9);
 }
 function inferLang(filePath) {
     const ext = path.extname(filePath).toLowerCase();
@@ -36790,7 +36847,7 @@ class GitHubOutputter {
                 lines.push(`**Remediation:** ${f.remediation}`);
                 lines.push(``);
                 if (f.code_snippet) {
-                    lines.push(`\`\`\`python`);
+                    lines.push(`\`\`\`${f.language}`);
                     lines.push(f.code_snippet);
                     lines.push(`\`\`\``);
                 }
@@ -37071,13 +37128,15 @@ exports.runGitleaks = runGitleaks;
 exports.resetGitleaksCache = resetGitleaksCache;
 const core = __importStar(__nccwpck_require__(7184));
 const exec = __importStar(__nccwpck_require__(9192));
+const crypto = __importStar(__nccwpck_require__(6982));
 const fs = __importStar(__nccwpck_require__(9896));
+const os = __importStar(__nccwpck_require__(857));
 const path = __importStar(__nccwpck_require__(6928));
 /**
- * Note: This module uses @actions/exec which calls child_process.execFile()
- * internally with argument arrays -- no shell interpretation, no injection risk.
+ * Note: This module uses @actions/exec (which calls execFile internally
+ * with argument arrays) -- no shell interpretation, no injection risk.
  */
-const GITLEAKS_REPORT = '/tmp/gitleaks_global.json';
+const GITLEAKS_REPORT = path.join(os.tmpdir(), 'gitleaks_global.json');
 let gitleaksCache = null;
 /**
  * Run gitleaks once globally, cache results, and return findings
@@ -37111,7 +37170,14 @@ async function runGitleaksGlobal(workspacePath) {
     }).catch(() => -1);
     if (!fs.existsSync(GITLEAKS_REPORT))
         return [];
-    const leaks = JSON.parse(fs.readFileSync(GITLEAKS_REPORT, 'utf-8') || '[]');
+    let leaks;
+    try {
+        leaks = JSON.parse(fs.readFileSync(GITLEAKS_REPORT, 'utf-8') || '[]');
+    }
+    catch (e) {
+        core.warning(`Failed to parse gitleaks output: ${e}`);
+        return [];
+    }
     const now = new Date().toISOString();
     const findings = [];
     for (const leak of leaks ?? []) {
@@ -37148,7 +37214,7 @@ function resetGitleaksCache() {
     gitleaksCache = null;
 }
 function generateId() {
-    return Math.random().toString(36).substring(2, 11);
+    return crypto.randomUUID().replace(/-/g, '').substring(0, 9);
 }
 //# sourceMappingURL=shared-scanners.js.map
 
@@ -37368,10 +37434,12 @@ function parseSimpleYaml(content) {
             result[currentSection] = result[currentSection] ?? {};
             continue;
         }
-        // Key-value pair (indented)
-        const match = trimmed.match(/^(\w+):\s*(.+)$/);
+        // Key-value pair (indented) — supports underscored and hyphenated keys
+        const match = trimmed.match(/^([\w-]+):\s*(.+)$/);
         if (match && currentSection) {
-            const [, key, rawValue] = match;
+            const [, rawKey, rawValue] = match;
+            // Normalize hyphens to underscores so max-nesting-depth -> max_nesting_depth
+            const key = rawKey.replace(/-/g, '_');
             result[currentSection][key] = parseYamlValue(rawValue);
         }
     }
