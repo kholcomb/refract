@@ -288,11 +288,6 @@ function handleCheckerOutput(
   signal: string | null,
   stderr: string
 ): void {
-  if (signal === 'SIGTERM') {
-    connection.console.warn(`Checker timed out after 30s for ${fsPath}`)
-    resolve([])
-    return
-  }
   if (code !== 0 && code !== null) {
     connection.console.warn(`Checker exited ${code}: ${stderr}`)
   }
@@ -308,6 +303,41 @@ function handleCheckerOutput(
   } catch (e: any) {
     reject(new Error(`Failed to parse checker output: ${e.message}`))
   }
+}
+
+const CHECKER_TIMEOUT_MS = 30_000
+
+// Shared helper: spawn a child process with a hard kill timeout
+function spawnWithTimeout(
+  cmd: string,
+  args: string[],
+  fsPath: string,
+  outputPath: string,
+  resolve: (f: Finding[]) => void,
+  reject: (e: Error) => void
+): void {
+  const proc = cp.spawn(cmd, args, { cwd: workspaceRoot })
+  let stderr = ''
+  let killed = false
+
+  const timer = setTimeout(() => {
+    killed = true
+    proc.kill('SIGTERM')
+    // Force kill if SIGTERM doesn't work after 5s
+    setTimeout(() => { if (!proc.killed) proc.kill('SIGKILL') }, 5_000)
+  }, CHECKER_TIMEOUT_MS)
+
+  proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+  proc.on('close', (code, signal) => {
+    clearTimeout(timer)
+    if (killed) {
+      connection.console.warn(`Checker timed out after ${CHECKER_TIMEOUT_MS / 1000}s for ${fsPath}`)
+      resolve([])
+      return
+    }
+    handleCheckerOutput(fsPath, outputPath, resolve, reject, code, signal, stderr)
+  })
+  proc.on('error', (e) => { clearTimeout(timer); reject(e) })
 }
 
 // Python: spawn interpreter with script path
@@ -326,12 +356,7 @@ function runSidecarAnalysis(
   }
   const args = [checkerPath, path.dirname(fsPath), '--output', outputPath, '--single-file', fsPath]
   if (config.ignorePaths.length > 0) args.push('--ignore', config.ignorePaths.join(','))
-
-  const proc = cp.spawn(interpreter, args, { cwd: workspaceRoot, timeout: 30_000 })
-  let stderr = ''
-  proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
-  proc.on('close', (code, signal) => handleCheckerOutput(fsPath, outputPath, resolve, reject, code, signal, stderr))
-  proc.on('error', (e) => reject(e))
+  spawnWithTimeout(interpreter, args, fsPath, outputPath, resolve, reject)
 }
 
 // Go: compiled binary, run directly
@@ -349,12 +374,7 @@ function runBinaryAnalysis(
   }
   const args = [path.dirname(fsPath), '--output', outputPath]
   if (config.ignorePaths.length > 0) args.push('--ignore', config.ignorePaths.join(','))
-
-  const proc = cp.spawn(binaryPath, args, { cwd: workspaceRoot, timeout: 30_000 })
-  let stderr = ''
-  proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
-  proc.on('close', (code, signal) => handleCheckerOutput(fsPath, outputPath, resolve, reject, code, signal, stderr))
-  proc.on('error', (e) => reject(e))
+  spawnWithTimeout(binaryPath, args, fsPath, outputPath, resolve, reject)
 }
 
 // TypeScript/JS: run with node
@@ -372,12 +392,7 @@ function runNodeAnalysis(
   }
   const args = [scriptPath, path.dirname(fsPath), '--output', outputPath]
   if (config.ignorePaths.length > 0) args.push('--ignore', config.ignorePaths.join(','))
-
-  const proc = cp.spawn('node', args, { cwd: workspaceRoot, timeout: 30_000 })
-  let stderr = ''
-  proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
-  proc.on('close', (code, signal) => handleCheckerOutput(fsPath, outputPath, resolve, reject, code, signal, stderr))
-  proc.on('error', (e) => reject(e))
+  spawnWithTimeout('node', args, fsPath, outputPath, resolve, reject)
 }
 
 // --- LSP Diagnostics ---
@@ -595,10 +610,19 @@ function* walkDir(dir: string, ignorePatterns: string[]): Generator<string> {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
       if (skipDirs.has(entry.name) || entry.name.startsWith('.')) continue
-      // Check user-configured ignore patterns (glob-like prefix match)
+      // Check user-configured ignore patterns using path segment matching
       const shouldIgnore = ignorePatterns.some(pattern => {
+        // Strip glob wildcards and slashes to get the directory name(s)
         const clean = pattern.replace(/\*\*/g, '').replace(/\*/g, '').replace(/^\/|\/$/g, '')
-        return clean && (entry.name === clean || full.includes(clean))
+        if (!clean) return false
+        // Exact segment match: "venv" matches dir named "venv" but not "venv_old"
+        // Path segment match: "src/generated" matches if both segments appear in order
+        const segments = clean.split('/').filter(Boolean)
+        if (segments.length === 1) return entry.name === segments[0]
+        // Multi-segment: check if the full path ends with the pattern segments
+        const fullSegments = full.split(path.sep)
+        const patternStr = segments.join(path.sep)
+        return full.endsWith(patternStr) || fullSegments.includes(segments[0]) && entry.name === segments[segments.length - 1]
       })
       if (!shouldIgnore) yield* walkDir(full, ignorePatterns)
     } else {

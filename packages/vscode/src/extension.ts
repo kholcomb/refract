@@ -24,6 +24,8 @@ let client: LanguageClient
 let statusBarItem: vscode.StatusBarItem
 let treeProvider: FindingsTreeProvider
 let summaryPanel: SummaryPanel | undefined
+// Track diff preview providers so we can dispose previous ones on re-open
+let activeDiffProviders: vscode.Disposable[] = []
 
 // --- Activate ---
 
@@ -160,10 +162,13 @@ export async function activate(context: vscode.ExtensionContext) {
         return
       }
 
+      // Dispose any previously registered diff providers
+      for (const d of activeDiffProviders) d.dispose()
+      activeDiffProviders = []
+
       const original = vscode.Uri.parse(`antipattern-original:${finding.file}`)
       const fixed = vscode.Uri.parse(`antipattern-fixed:${finding.file}`)
 
-      // Register one-time content providers for the diff
       const reg1 = vscode.workspace.registerTextDocumentContentProvider(
         'antipattern-original', {
           provideTextDocumentContent: () => fix.originalSnippet
@@ -174,6 +179,7 @@ export async function activate(context: vscode.ExtensionContext) {
           provideTextDocumentContent: () => fix.fixedSnippet
         }
       )
+      activeDiffProviders.push(reg1, reg2)
 
       await vscode.commands.executeCommand(
         'vscode.diff',
@@ -181,9 +187,6 @@ export async function activate(context: vscode.ExtensionContext) {
         fixed,
         `Fix Preview: ${finding.antipattern_name} (${finding.file}:${finding.line_start})`
       )
-
-      // Clean up providers after a moment
-      setTimeout(() => { reg1.dispose(); reg2.dispose() }, 30_000)
     }),
 
     // Open GitHub issue for this finding

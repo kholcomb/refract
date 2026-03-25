@@ -81,7 +81,7 @@ function mergeFromYaml(target: Thresholds, filePath: string): void {
 
   for (const [section, values] of Object.entries(parsed)) {
     if (section in target) {
-      Object.assign((target as any)[section], values)
+      Object.assign(target[section as keyof Thresholds], values)
     }
   }
 }
@@ -106,10 +106,12 @@ function parseSimpleYaml(content: string): Record<string, Record<string, any>> {
       continue
     }
 
-    // Key-value pair (indented)
-    const match = trimmed.match(/^(\w+):\s*(.+)$/)
+    // Key-value pair (indented) — supports underscored and hyphenated keys
+    const match = trimmed.match(/^([\w-]+):\s*(.+)$/)
     if (match && currentSection) {
-      const [, key, rawValue] = match
+      const [, rawKey, rawValue] = match
+      // Normalize hyphens to underscores so max-nesting-depth -> max_nesting_depth
+      const key = rawKey.replace(/-/g, '_')
       result[currentSection][key] = parseYamlValue(rawValue)
     }
   }

@@ -30,7 +30,7 @@ async function run(): Promise<void> {
     const stepSummary     = core.getInput('step_summary') === 'true'
     const slackWebhook    = core.getInput('slack_webhook_url')
     const issueLabel      = core.getInput('issue_label')
-    const confidenceStr   = parseFloat(core.getInput('confidence_threshold'))
+    const confidenceStr   = Math.max(0, Math.min(1, parseFloat(core.getInput('confidence_threshold')) || 0.7))
     const pathsIgnore     = core.getInput('paths_ignore')
       .split(',').map(s => s.trim()).filter(Boolean)
 
