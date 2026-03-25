@@ -26,7 +26,7 @@ jobs:
 
       - name: Run Anti-Pattern Detector
         id: scan
-        uses: kholcomb/refract@v1
+        uses: ./ # self-test: use action from this repo, not stale v1 tag
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 

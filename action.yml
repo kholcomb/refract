@@ -78,5 +78,5 @@ outputs:
     description: 'Path to the full JSON findings report'
 
 runs:
-  using: 'node22'
+  using: 'node20'
   main: 'packages/action/dist/index.js'
