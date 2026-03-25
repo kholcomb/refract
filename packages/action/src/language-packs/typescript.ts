@@ -1,6 +1,8 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { Finding, AntipatternCategory, Severity, getActionRoot } from '@refract/core'
 import { runGitleaks } from '../shared-scanners'
@@ -53,14 +55,18 @@ async function runStructureChecks(options: TypeScriptScanOptions): Promise<Findi
   if (lizardInstalled.exitCode === 0) {
     await runCommand(
       'lizard',
-      [options.workspacePath, '--output-file', '/tmp/lizard_ts_output.json',
+      [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_ts_output.json'),
        '--json', '-l', 'javascript', '--length', '50', '--CCN', '10'],
       { ignoreReturnCode: true }
     )
 
-    if (fs.existsSync('/tmp/lizard_ts_output.json')) {
-      const data = JSON.parse(fs.readFileSync('/tmp/lizard_ts_output.json', 'utf-8'))
-      findings.push(...parseLizardOutput(data, options.workspacePath))
+    if (fs.existsSync(path.join(os.tmpdir(), 'lizard_ts_output.json'))) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_ts_output.json'), 'utf-8'))
+        findings.push(...parseLizardOutput(data, options.workspacePath))
+      } catch (e) {
+        core.warning(`Failed to parse lizard output: ${e}`)
+      }
     }
   }
 
@@ -70,13 +76,17 @@ async function runStructureChecks(options: TypeScriptScanOptions): Promise<Findi
     await runCommand(
       'node',
       [astScriptPath, options.workspacePath,
-       '--output', '/tmp/ts_ast_findings.json',
+       '--output', path.join(os.tmpdir(), 'ts_ast_findings.json'),
        '--ignore', options.ignorePaths.join(',')],
       { ignoreReturnCode: true }
     )
-    if (fs.existsSync('/tmp/ts_ast_findings.json')) {
-      const data = JSON.parse(fs.readFileSync('/tmp/ts_ast_findings.json', 'utf-8'))
-      findings.push(...data.findings ?? [])
+    if (fs.existsSync(path.join(os.tmpdir(), 'ts_ast_findings.json'))) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'ts_ast_findings.json'), 'utf-8'))
+        findings.push(...data.findings ?? [])
+      } catch (e) {
+        core.warning(`Failed to parse TS AST findings: ${e}`)
+      }
     }
   }
 
@@ -354,7 +364,7 @@ async function runCommand(
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 11)
+  return crypto.randomUUID().replace(/-/g, '').substring(0, 9)
 }
 
 function inferLang(filePath: string): string {

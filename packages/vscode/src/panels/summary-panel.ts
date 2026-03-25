@@ -92,14 +92,14 @@ function buildHtml(findings: Finding[]): string {
       || a.file.localeCompare(b.file)
     )
     .map(f => `
-      <div class="finding-card severity-${f.severity}" data-id="${f.id}" data-category="${f.category}">
+      <div class="finding-card severity-${escAttr(f.severity)}" data-id="${escAttr(f.id)}" data-category="${escAttr(f.category)}">
         <div class="finding-header">
-          <span class="severity-badge severity-${f.severity}">${f.severity.toUpperCase()}</span>
-          <span class="finding-name">${f.antipattern_name}</span>
-          <span class="finding-effort">${effortIcons[f.effort] ?? ''} ${f.effort}</span>
+          <span class="severity-badge severity-${escAttr(f.severity)}">${escHtml(f.severity.toUpperCase())}</span>
+          <span class="finding-name">${escHtml(f.antipattern_name)}</span>
+          <span class="finding-effort">${escHtml(effortIcons[f.effort] ?? '')} ${escHtml(f.effort)}</span>
         </div>
-        <div class="finding-location" onclick="jumpTo('${f.file.replace(/\\/g, '\\\\')}', ${f.line_start})">
-          [report] ${f.file}<span class="line-number">:${f.line_start}</span>
+        <div class="finding-location" data-file="${escAttr(f.file)}" data-line="${f.line_start}">
+          [report] ${escHtml(f.file)}<span class="line-number">:${f.line_start}</span>
         </div>
         <div class="finding-message">${escHtml(f.message)}</div>
         <details>
@@ -113,8 +113,8 @@ function buildHtml(findings: Finding[]): string {
         </div>
         <div class="finding-meta">
           <span class="tag">confidence: ${(f.confidence * 100).toFixed(0)}%</span>
-          <span class="tag">${f.rule_id}</span>
-          ${(f.tags ?? []).map(t => `<span class="tag">${t}</span>`).join('')}
+          <span class="tag">${escHtml(f.rule_id)}</span>
+          ${(f.tags ?? []).map(t => `<span class="tag">${escHtml(t)}</span>`).join('')}
         </div>
       </div>
     `).join('')
@@ -285,6 +285,11 @@ ${findings.length === 0
   }
 
   document.addEventListener('click', (e) => {
+    const loc = e.target.closest('.finding-location[data-file]')
+    if (loc) {
+      jumpTo(loc.dataset.file, parseInt(loc.dataset.line, 10))
+      return
+    }
     const btn = e.target.closest('button[data-action]')
     if (!btn) return
     const action = btn.dataset.action
@@ -320,4 +325,9 @@ function escHtml(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function escAttr(s: string): string {
+  return escHtml(s)
 }

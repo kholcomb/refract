@@ -1,6 +1,8 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { Finding, AntipatternCategory, Severity, getActionRoot } from '@refract/core'
 import { runGitleaks } from '../shared-scanners'
@@ -50,14 +52,18 @@ async function runStructureChecks(options: PythonScanOptions): Promise<Finding[]
 
   const lizardOutput = await runCommand(
     'lizard',
-    [options.workspacePath, '--output-file', '/tmp/lizard_output.json',
+    [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_output.json'),
      '--json', '-l', 'python', '--length', '50', '--CCN', '10'],
     { ignoreReturnCode: true }
   )
 
-  if (fs.existsSync('/tmp/lizard_output.json')) {
-    const data = JSON.parse(fs.readFileSync('/tmp/lizard_output.json', 'utf-8'))
-    findings.push(...parseLizardOutput(data, options.workspacePath))
+  if (fs.existsSync(path.join(os.tmpdir(), 'lizard_output.json'))) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_output.json'), 'utf-8'))
+      findings.push(...parseLizardOutput(data, options.workspacePath))
+    } catch (e) {
+      core.warning(`Failed to parse lizard output: ${e}`)
+    }
   }
 
   // Custom AST-based checks using Python script
@@ -65,13 +71,17 @@ async function runStructureChecks(options: PythonScanOptions): Promise<Finding[]
   if (fs.existsSync(customScriptPath)) {
     const astOutput = await runCommand(
       'python3',
-      [customScriptPath, options.workspacePath, '--output', '/tmp/ast_findings.json',
+      [customScriptPath, options.workspacePath, '--output', path.join(os.tmpdir(), 'ast_findings.json'),
        '--ignore', options.ignorePaths.join(',')],
       { ignoreReturnCode: true }
     )
-    if (fs.existsSync('/tmp/ast_findings.json')) {
-      const data = JSON.parse(fs.readFileSync('/tmp/ast_findings.json', 'utf-8'))
-      findings.push(...data.findings ?? [])
+    if (fs.existsSync(path.join(os.tmpdir(), 'ast_findings.json'))) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'ast_findings.json'), 'utf-8'))
+        findings.push(...data.findings ?? [])
+      } catch (e) {
+        core.warning(`Failed to parse AST findings: ${e}`)
+      }
     }
   }
 
@@ -192,7 +202,7 @@ async function runSecurityChecks(options: PythonScanOptions): Promise<Finding[]>
   await exec.exec('pip', ['install', '--quiet', 'bandit'], { silent: true })
     .catch(() => core.warning('bandit install failed'))
 
-  const banditArgs = ['-r', options.workspacePath, '-f', 'json', '-o', '/tmp/bandit.json',
+  const banditArgs = ['-r', options.workspacePath, '-f', 'json', '-o', path.join(os.tmpdir(), 'bandit.json'),
      '--severity-level', 'medium', '-q']
   if (options.ignorePaths.length > 0) {
     banditArgs.push('--exclude', options.ignorePaths.map(p => path.join(options.workspacePath, p)).join(','))
@@ -200,9 +210,13 @@ async function runSecurityChecks(options: PythonScanOptions): Promise<Finding[]>
 
   await runCommand('bandit', banditArgs, { ignoreReturnCode: true })
 
-  if (fs.existsSync('/tmp/bandit.json')) {
-    const banditData = JSON.parse(fs.readFileSync('/tmp/bandit.json', 'utf-8'))
-    findings.push(...parseBanditOutput(banditData, options.workspacePath))
+  if (fs.existsSync(path.join(os.tmpdir(), 'bandit.json'))) {
+    try {
+      const banditData = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'bandit.json'), 'utf-8'))
+      findings.push(...parseBanditOutput(banditData, options.workspacePath))
+    } catch (e) {
+      core.warning(`Failed to parse bandit output: ${e}`)
+    }
   }
 
   return findings
@@ -332,43 +346,47 @@ async function runDependencyChecks(options: PythonScanOptions): Promise<Finding[
     }
   }
 
-  // pip-audit for Python-specific vuln scanning
+  // pip-audit for Python-specific vuln scanning (uses @actions/exec = execFile, no shell)
   await exec.exec('pip', ['install', '--quiet', 'pip-audit'], { silent: true })
-    .catch(() => {})
+    .catch(() => core.warning('pip-audit install failed, skipping Python dependency audit'))
 
   await runCommand(
     'pip-audit',
-    ['--format', 'json', '--output', '/tmp/pip_audit.json', '-r',
+    ['--format', 'json', '--output', path.join(os.tmpdir(), 'pip_audit.json'), '-r',
      path.join(options.workspacePath, 'requirements.txt')],
     { ignoreReturnCode: true }
   )
 
-  if (fs.existsSync('/tmp/pip_audit.json')) {
-    const data = JSON.parse(fs.readFileSync('/tmp/pip_audit.json', 'utf-8'))
-    for (const dep of data?.dependencies ?? []) {
-      for (const vuln of dep?.vulns ?? []) {
-        findings.push({
-          id: generateId(),
-          antipattern: 'vulnerable_dependency',
-          antipattern_name: 'Vulnerable Dependency',
-          category: 'dependencies',
-          severity: 'high',
-          confidence: 1.0,
-          file: 'requirements.txt',
-          line_start: 1,
-          line_end: 1,
-          language: 'python',
-          language_pack: PACK_VERSION,
-          message: `${dep.name}==${dep.version} is vulnerable: ${vuln.id} - ${vuln.description}`,
-          remediation: `Upgrade ${dep.name} to version ${vuln.fix_versions?.join(' or ')} or later.`,
-          effort: 'hours',
-          tool: 'pip-audit',
-          rule_id: `pip-audit/${vuln.id}`,
-          references: [vuln.link],
-          tags: ['security', 'dependencies'],
-          detected_at: now,
-        })
+  if (fs.existsSync(path.join(os.tmpdir(), 'pip_audit.json'))) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'pip_audit.json'), 'utf-8'))
+      for (const dep of data?.dependencies ?? []) {
+        for (const vuln of dep?.vulns ?? []) {
+          findings.push({
+            id: generateId(),
+            antipattern: 'vulnerable_dependency',
+            antipattern_name: 'Vulnerable Dependency',
+            category: 'dependencies',
+            severity: 'high',
+            confidence: 1.0,
+            file: 'requirements.txt',
+            line_start: 1,
+            line_end: 1,
+            language: 'python',
+            language_pack: PACK_VERSION,
+            message: `${dep.name}==${dep.version} is vulnerable: ${vuln.id} - ${vuln.description}`,
+            remediation: `Upgrade ${dep.name} to version ${vuln.fix_versions?.join(' or ')} or later.`,
+            effort: 'hours',
+            tool: 'pip-audit',
+            rule_id: `pip-audit/${vuln.id}`,
+            references: [vuln.link],
+            tags: ['security', 'dependencies'],
+            detected_at: now,
+          })
+        }
       }
+    } catch (e) {
+      core.warning(`Failed to parse pip-audit output: ${e}`)
     }
   }
 
@@ -395,19 +413,20 @@ async function runTestQualityChecks(options: PythonScanOptions): Promise<Finding
 
   core.info('  -> Test quality checks (coverage, bare asserts, missing tests...)')
 
-  // pytest-cov for coverage
+  // pytest-cov for coverage (uses @actions/exec = execFile, no shell)
   await exec.exec('pip', ['install', '--quiet', 'pytest', 'pytest-cov'], { silent: true })
-    .catch(() => {})
+    .catch(() => core.warning('pytest/pytest-cov install failed, skipping coverage checks'))
 
   await runCommand(
     'python3',
     ['-m', 'pytest', '--cov', options.workspacePath,
-     '--cov-report', 'json:/tmp/coverage.json', '-q', '--no-header'],
+     '--cov-report', `json:${path.join(os.tmpdir(), 'coverage.json')}`, '-q', '--no-header'],
     { ignoreReturnCode: true, cwd: options.workspacePath }
   )
 
-  if (fs.existsSync('/tmp/coverage.json')) {
-    const data = JSON.parse(fs.readFileSync('/tmp/coverage.json', 'utf-8'))
+  if (fs.existsSync(path.join(os.tmpdir(), 'coverage.json'))) {
+    try {
+    const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'coverage.json'), 'utf-8'))
     for (const [file, fileData] of Object.entries(data?.files ?? {})) {
       const cov = fileData as any
       const pct = cov.summary?.percent_covered ?? 100
@@ -437,6 +456,9 @@ async function runTestQualityChecks(options: PythonScanOptions): Promise<Finding
           detected_at: now,
         })
       }
+    }
+    } catch (e) {
+      core.warning(`Failed to parse coverage output: ${e}`)
     }
   }
 
@@ -469,5 +491,5 @@ async function runCommand(
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 11)
+  return crypto.randomUUID().replace(/-/g, '').substring(0, 9)
 }

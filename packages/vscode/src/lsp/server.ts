@@ -230,6 +230,9 @@ async function scanFile(fsPath: string, lang: string, uri: string): Promise<void
     connection.console.log(`  -> ${findings.length} findings in ${path.basename(fsPath)}`)
   } catch (e: any) {
     connection.console.error(`Scan failed for ${fsPath}: ${e.message}`)
+  } finally {
+    // Clean up temp file to avoid filling disk on long sessions
+    try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath) } catch {}
   }
 }
 
@@ -481,16 +484,14 @@ function buildAutoFix(
 ): CodeAction | null {
   switch (finding.antipattern) {
     case 'mutable_default_argument': {
-      // We can suggest the fix but not safely rewrite without full AST context
-      // So we provide a command-based fix that opens an interactive rename
       return {
         title: `$(wand) Fix: Replace mutable default with None`,
         kind: CodeActionKind.QuickFix,
         isPreferred: true,
         command: {
-          command: 'antipattern.applyInteractiveFix',
-          title: 'Fix Mutable Default',
-          arguments: [finding, uri],
+          command: 'antipattern.showDiffPreview',
+          title: 'Preview Fix',
+          arguments: [finding],
         },
       }
     }
@@ -501,9 +502,9 @@ function buildAutoFix(
         kind: CodeActionKind.QuickFix,
         isPreferred: true,
         command: {
-          command: 'antipattern.applyInteractiveFix',
-          title: 'Fix Wildcard Import',
-          arguments: [finding, uri],
+          command: 'antipattern.showDiffPreview',
+          title: 'Preview Fix',
+          arguments: [finding],
         },
       }
     }

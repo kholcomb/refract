@@ -1,15 +1,17 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { Finding } from '@refract/core'
 
 /**
- * Note: This module uses @actions/exec which calls child_process.execFile()
- * internally with argument arrays -- no shell interpretation, no injection risk.
+ * Note: This module uses @actions/exec (which calls execFile internally
+ * with argument arrays) -- no shell interpretation, no injection risk.
  */
 
-const GITLEAKS_REPORT = '/tmp/gitleaks_global.json'
+const GITLEAKS_REPORT = path.join(os.tmpdir(), 'gitleaks_global.json')
 
 let gitleaksCache: Finding[] | null = null
 
@@ -59,7 +61,13 @@ async function runGitleaksGlobal(workspacePath: string): Promise<Finding[]> {
 
   if (!fs.existsSync(GITLEAKS_REPORT)) return []
 
-  const leaks = JSON.parse(fs.readFileSync(GITLEAKS_REPORT, 'utf-8') || '[]')
+  let leaks: any[]
+  try {
+    leaks = JSON.parse(fs.readFileSync(GITLEAKS_REPORT, 'utf-8') || '[]')
+  } catch (e) {
+    core.warning(`Failed to parse gitleaks output: ${e}`)
+    return []
+  }
   const now = new Date().toISOString()
   const findings: Finding[] = []
 
@@ -100,5 +108,5 @@ export function resetGitleaksCache(): void {
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 11)
+  return crypto.randomUUID().replace(/-/g, '').substring(0, 9)
 }

@@ -95,7 +95,7 @@ export class GitHubOutputter {
         lines.push(`**Remediation:** ${f.remediation}`)
         lines.push(``)
         if (f.code_snippet) {
-          lines.push(`\`\`\`python`)
+          lines.push(`\`\`\`${f.language}`)
           lines.push(f.code_snippet)
           lines.push(`\`\`\``)
         }

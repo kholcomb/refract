@@ -3,7 +3,9 @@
 
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { Finding, AntipatternCategory, Severity, getActionRoot } from '@refract/core'
 import { runGitleaks } from '../shared-scanners'
@@ -48,7 +50,7 @@ async function runStructureChecks(options: GoScanOptions): Promise<Finding[]> {
   // Custom AST-based checks via compiled Go binary
   const astBinaryPath = path.join(getActionRoot(), 'language-packs/go/scripts/ast_checks')
   const astScriptPath = path.join(getActionRoot(), 'language-packs/go/scripts/ast_checks.go')
-  const outputPath = '/tmp/go_ast_findings.json'
+  const outputPath = path.join(os.tmpdir(), 'go_ast_findings.json')
 
   // Prefer compiled binary, fall back to go run
   let astCmd: string
@@ -70,21 +72,29 @@ async function runStructureChecks(options: GoScanOptions): Promise<Finding[]> {
   await runCommand(astCmd, astArgs, { ignoreReturnCode: true })
 
   if (fs.existsSync(outputPath)) {
-    const data = JSON.parse(fs.readFileSync(outputPath, 'utf-8'))
-    findings.push(...data.findings ?? [])
+    try {
+      const data = JSON.parse(fs.readFileSync(outputPath, 'utf-8'))
+      findings.push(...data.findings ?? [])
+    } catch (e) {
+      core.warning(`Failed to parse Go AST findings: ${e}`)
+    }
   }
 
   // Lizard for complexity (supports Go)
   await runCommand(
     'lizard',
-    [options.workspacePath, '--output-file', '/tmp/lizard_go_output.json',
+    [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_go_output.json'),
      '--json', '-l', 'golang', '--length', '50', '--CCN', '10'],
     { ignoreReturnCode: true }
   )
 
-  if (fs.existsSync('/tmp/lizard_go_output.json')) {
-    const data = JSON.parse(fs.readFileSync('/tmp/lizard_go_output.json', 'utf-8'))
-    findings.push(...parseLizardOutput(data, options.workspacePath))
+  if (fs.existsSync(path.join(os.tmpdir(), 'lizard_go_output.json'))) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_go_output.json'), 'utf-8'))
+      findings.push(...parseLizardOutput(data, options.workspacePath))
+    } catch (e) {
+      core.warning(`Failed to parse lizard output: ${e}`)
+    }
   }
 
   return findings
@@ -161,13 +171,13 @@ async function runSecurityChecks(options: GoScanOptions): Promise<Finding[]> {
   // gosec (Apache 2.0)
   const gosecOutput = await runCommand(
     'gosec',
-    ['-fmt', 'json', '-out', '/tmp/gosec.json', '-severity', 'medium', '-quiet', './...'],
+    ['-fmt', 'json', '-out', path.join(os.tmpdir(), 'gosec.json'), '-severity', 'medium', '-quiet', './...'],
     { ignoreReturnCode: true, cwd: options.workspacePath }
   )
 
-  if (fs.existsSync('/tmp/gosec.json')) {
+  if (fs.existsSync(path.join(os.tmpdir(), 'gosec.json'))) {
     try {
-      const data = JSON.parse(fs.readFileSync('/tmp/gosec.json', 'utf-8'))
+      const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'gosec.json'), 'utf-8'))
       findings.push(...parseGosecOutput(data, options.workspacePath))
     } catch {
       core.warning('Failed to parse gosec output')
@@ -334,5 +344,5 @@ async function runCommand(
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 11)
+  return crypto.randomUUID().replace(/-/g, '').substring(0, 9)
 }

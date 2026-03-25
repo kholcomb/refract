@@ -1,6 +1,7 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { detectLanguages } from './language-detector'
 import { scanPython } from './language-packs/python'
@@ -107,7 +108,11 @@ async function run(): Promise<void> {
 
     // --- Filter by ignored paths (safety net for tools that don't support exclusion) ---
     const pathFilteredFindings = pathsIgnore.length > 0
-      ? allFindings.filter(f => !pathsIgnore.some(p => f.file.startsWith(p)))
+      ? allFindings.filter(f => !pathsIgnore.some(p => {
+          // Support both prefix matches (tests/) and substring matches (src/tests/)
+          const normalized = p.replace(/\*\*/g, '').replace(/\*/g, '').replace(/^\/|\/$/g, '')
+          return normalized && (f.file.startsWith(normalized) || f.file.includes('/' + normalized))
+        }))
       : allFindings
 
     // --- Filter by severity threshold ---
@@ -141,7 +146,7 @@ async function run(): Promise<void> {
     const result: ScanResult = { meta, findings: filteredFindings, summary }
 
     // --- Write JSON report ---
-    const reportPath = '/tmp/antipattern-report.json'
+    const reportPath = path.join(os.tmpdir(), 'antipattern-report.json')
     fs.writeFileSync(reportPath, JSON.stringify(result, null, 2))
     core.info(`[report] Report written to ${reportPath}`)
 
