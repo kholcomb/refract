@@ -35628,9 +35628,11 @@ const path = __importStar(__nccwpck_require__(6928));
 const core_1 = __nccwpck_require__(5026);
 const shared_scanners_1 = __nccwpck_require__(7010);
 const PACK_VERSION = 'go_v1';
+let thresholds;
 async function scanGo(options) {
     const findings = [];
     core.info('[go] Running Go language pack...');
+    thresholds = (0, core_1.loadThresholds)('go', options.workspacePath);
     if (options.categories.includes('code_structure')) {
         findings.push(...await runStructureChecks(options));
     }
@@ -35653,19 +35655,24 @@ async function runStructureChecks(options) {
     const astBinaryPath = path.join((0, core_1.getActionRoot)(), 'language-packs/go/scripts/ast_checks');
     const astScriptPath = path.join((0, core_1.getActionRoot)(), 'language-packs/go/scripts/ast_checks.go');
     const outputPath = path.join(os.tmpdir(), 'go_ast_findings.json');
+    // Write thresholds to temp file for sidecar consumption
+    const thresholdsPath = path.join(os.tmpdir(), 'go_thresholds.json');
+    fs.writeFileSync(thresholdsPath, JSON.stringify(thresholds));
     // Prefer compiled binary, fall back to go run
     let astCmd;
     let astArgs;
     if (fs.existsSync(astBinaryPath)) {
         astCmd = astBinaryPath;
         astArgs = [options.workspacePath, '--output', outputPath,
-            '--ignore', options.ignorePaths.join(',')];
+            '--ignore', options.ignorePaths.join(','),
+            '--thresholds-json', thresholdsPath];
     }
     else if (fs.existsSync(astScriptPath)) {
         astCmd = 'go';
         astArgs = ['run', astScriptPath, options.workspacePath,
             '--output', outputPath,
-            '--ignore', options.ignorePaths.join(',')];
+            '--ignore', options.ignorePaths.join(','),
+            '--thresholds-json', thresholdsPath];
     }
     else {
         core.warning('Go AST checker not found, skipping structure checks');
@@ -35683,7 +35690,9 @@ async function runStructureChecks(options) {
     }
     // Lizard for complexity (supports Go)
     await runCommand('lizard', [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_go_output.json'),
-        '--json', '-l', 'golang', '--length', '50', '--CCN', '10'], { ignoreReturnCode: true });
+        '--json', '-l', 'golang',
+        '--length', String(thresholds.code_structure.max_function_length),
+        '--CCN', String(thresholds.code_structure.max_cyclomatic_complexity)], { ignoreReturnCode: true });
     if (fs.existsSync(path.join(os.tmpdir(), 'lizard_go_output.json'))) {
         try {
             const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_go_output.json'), 'utf-8'));
@@ -35698,44 +35707,45 @@ async function runStructureChecks(options) {
 function parseLizardOutput(data, workspacePath) {
     const findings = [];
     const now = new Date().toISOString();
+    const cs = thresholds.code_structure;
     for (const file of data?.function_list ?? []) {
         const relPath = path.relative(workspacePath, file.filename);
-        if (file.length > 50) {
+        if (file.length > cs.max_function_length) {
             findings.push({
                 id: generateId(),
                 antipattern: 'long_method',
                 antipattern_name: 'Long Function',
                 category: 'code_structure',
-                severity: file.length > 150 ? 'high' : 'medium',
+                severity: file.length > cs.max_function_length * 3 ? 'high' : 'medium',
                 confidence: 0.95,
                 file: relPath,
                 line_start: file.start_line,
                 line_end: file.end_line,
                 language: 'go',
                 language_pack: PACK_VERSION,
-                message: `Function '${file.name}' is ${file.length} lines long (threshold: 50)`,
+                message: `Function '${file.name}' is ${file.length} lines long (threshold: ${cs.max_function_length})`,
                 remediation: `Break '${file.name}' into smaller functions with single responsibilities.`,
-                effort: file.length > 150 ? 'days' : 'hours',
+                effort: file.length > cs.max_function_length * 3 ? 'days' : 'hours',
                 tool: 'lizard',
                 rule_id: 'go/long-function',
                 tags: ['maintainability'],
                 detected_at: now,
             });
         }
-        if (file.cyclomatic_complexity > 10) {
+        if (file.cyclomatic_complexity > cs.max_cyclomatic_complexity) {
             findings.push({
                 id: generateId(),
                 antipattern: 'high_cyclomatic_complexity',
                 antipattern_name: 'High Cyclomatic Complexity',
                 category: 'code_structure',
-                severity: file.cyclomatic_complexity > 20 ? 'high' : 'medium',
+                severity: file.cyclomatic_complexity > cs.max_cyclomatic_complexity * 2 ? 'high' : 'medium',
                 confidence: 1.0,
                 file: relPath,
                 line_start: file.start_line,
                 line_end: file.end_line,
                 language: 'go',
                 language_pack: PACK_VERSION,
-                message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: 10)`,
+                message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: ${cs.max_cyclomatic_complexity})`,
                 remediation: `Reduce branching with early returns, table-driven logic, or extracted helper functions.`,
                 effort: 'hours',
                 tool: 'lizard',
@@ -35957,9 +35967,11 @@ const path = __importStar(__nccwpck_require__(6928));
 const core_1 = __nccwpck_require__(5026);
 const shared_scanners_1 = __nccwpck_require__(7010);
 const PACK_VERSION = 'python_v1';
+let thresholds;
 async function scanPython(options) {
     const findings = [];
     core.info('[py] Running Python language pack...');
+    thresholds = (0, core_1.loadThresholds)('python', options.workspacePath);
     if (options.categories.includes('code_structure')) {
         findings.push(...await runStructureChecks(options));
     }
@@ -35983,8 +35995,11 @@ async function runStructureChecks(options) {
     // Install lizard for complexity analysis
     await exec.exec('pip', ['install', '--quiet', 'lizard'], { silent: true })
         .catch(() => core.warning('lizard install failed, skipping complexity checks'));
+    const cs = thresholds.code_structure;
     const lizardOutput = await runCommand('lizard', [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_output.json'),
-        '--json', '-l', 'python', '--length', '50', '--CCN', '10'], { ignoreReturnCode: true });
+        '--json', '-l', 'python',
+        '--length', String(cs.max_function_length),
+        '--CCN', String(cs.max_cyclomatic_complexity)], { ignoreReturnCode: true });
     if (fs.existsSync(path.join(os.tmpdir(), 'lizard_output.json'))) {
         try {
             const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_output.json'), 'utf-8'));
@@ -35997,8 +36012,12 @@ async function runStructureChecks(options) {
     // Custom AST-based checks using Python script
     const customScriptPath = path.join((0, core_1.getActionRoot)(), 'language-packs/python/scripts/ast_checks.py');
     if (fs.existsSync(customScriptPath)) {
+        // Write thresholds to temp file for sidecar consumption
+        const thresholdsPath = path.join(os.tmpdir(), 'py_thresholds.json');
+        fs.writeFileSync(thresholdsPath, JSON.stringify(thresholds));
         const astOutput = await runCommand('python3', [customScriptPath, options.workspacePath, '--output', path.join(os.tmpdir(), 'ast_findings.json'),
-            '--ignore', options.ignorePaths.join(',')], { ignoreReturnCode: true });
+            '--ignore', options.ignorePaths.join(','),
+            '--thresholds-json', thresholdsPath], { ignoreReturnCode: true });
         if (fs.existsSync(path.join(os.tmpdir(), 'ast_findings.json'))) {
             try {
                 const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'ast_findings.json'), 'utf-8'));
@@ -36016,23 +36035,24 @@ function parseLizardOutput(data, workspacePath) {
     const now = new Date().toISOString();
     for (const file of data?.function_list ?? []) {
         const relPath = path.relative(workspacePath, file.filename);
+        const cs = thresholds.code_structure;
         // Long method
-        if (file.length > 50) {
+        if (file.length > cs.max_function_length) {
             findings.push({
                 id: generateId(),
                 antipattern: 'long_method',
                 antipattern_name: 'Long Method',
                 category: 'code_structure',
-                severity: file.length > 150 ? 'high' : 'medium',
+                severity: file.length > cs.max_function_length * 3 ? 'high' : 'medium',
                 confidence: 0.95,
                 file: relPath,
                 line_start: file.start_line,
                 line_end: file.end_line,
                 language: 'python',
                 language_pack: PACK_VERSION,
-                message: `Function '${file.name}' is ${file.length} lines long (threshold: 50)`,
+                message: `Function '${file.name}' is ${file.length} lines long (threshold: ${cs.max_function_length})`,
                 remediation: `Break '${file.name}' into smaller, single-responsibility functions. Consider extracting logical blocks into helper methods.`,
-                effort: file.length > 150 ? 'days' : 'hours',
+                effort: file.length > cs.max_function_length * 3 ? 'days' : 'hours',
                 tool: 'lizard',
                 rule_id: 'python/long-method',
                 tags: ['maintainability'],
@@ -36040,20 +36060,20 @@ function parseLizardOutput(data, workspacePath) {
             });
         }
         // High cyclomatic complexity
-        if (file.cyclomatic_complexity > 10) {
+        if (file.cyclomatic_complexity > cs.max_cyclomatic_complexity) {
             findings.push({
                 id: generateId(),
                 antipattern: 'high_cyclomatic_complexity',
                 antipattern_name: 'High Cyclomatic Complexity',
                 category: 'code_structure',
-                severity: file.cyclomatic_complexity > 20 ? 'high' : 'medium',
+                severity: file.cyclomatic_complexity > cs.max_cyclomatic_complexity * 2 ? 'high' : 'medium',
                 confidence: 1.0,
                 file: relPath,
                 line_start: file.start_line,
                 line_end: file.end_line,
                 language: 'python',
                 language_pack: PACK_VERSION,
-                message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: 10)`,
+                message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: ${cs.max_cyclomatic_complexity})`,
                 remediation: `Reduce branching in '${file.name}' by extracting conditions into named predicates, using early returns, or applying the Strategy pattern.`,
                 effort: 'hours',
                 tool: 'lizard',
@@ -36074,13 +36094,15 @@ function parseLizardOutput(data, workspacePath) {
         const relPath = path.relative(workspacePath, filename);
         const methodCount = fns.length;
         const totalLines = fns.reduce((acc, f) => acc + f.length, 0);
-        if (methodCount > 20 || totalLines > 500) {
+        const godMethodCount = thresholds.code_structure.god_class_method_count;
+        const godTotalLines = thresholds.code_structure.god_class_total_lines;
+        if (methodCount > godMethodCount || totalLines > godTotalLines) {
             findings.push({
                 id: generateId(),
                 antipattern: 'god_class',
                 antipattern_name: 'God Class',
                 category: 'code_structure',
-                severity: methodCount > 40 ? 'high' : 'medium',
+                severity: methodCount > godMethodCount * 2 ? 'high' : 'medium',
                 confidence: 0.82,
                 file: relPath,
                 line_start: 1,
@@ -36313,20 +36335,21 @@ async function runTestQualityChecks(options) {
                 // Skip test files themselves
                 if (file.includes('test_') || file.includes('_test.py'))
                     continue;
-                if (pct < 50) {
+                const minCoverage = thresholds.test_quality.min_coverage_percent ?? 50;
+                if (pct < minCoverage) {
                     findings.push({
                         id: generateId(),
                         antipattern: 'missing_test_coverage',
                         antipattern_name: 'Missing Test Coverage',
                         category: 'test_quality',
-                        severity: pct < 20 ? 'high' : 'medium',
+                        severity: pct < minCoverage / 2.5 ? 'high' : 'medium',
                         confidence: 1.0,
                         file: path.relative(options.workspacePath, file),
                         line_start: 1,
                         line_end: 1,
                         language: 'python',
                         language_pack: PACK_VERSION,
-                        message: `File has only ${pct.toFixed(1)}% test coverage (threshold: 50%). Uncovered lines: ${cov.missing_lines?.join(', ')}`,
+                        message: `File has only ${pct.toFixed(1)}% test coverage (threshold: ${minCoverage}%). Uncovered lines: ${cov.missing_lines?.join(', ')}`,
                         remediation: `Add unit tests covering the uncovered lines, especially for business logic and error paths. Focus on lines: ${(cov.missing_lines ?? []).slice(0, 10).join(', ')}`,
                         effort: 'days',
                         tool: 'pytest-cov',
@@ -36416,9 +36439,11 @@ const path = __importStar(__nccwpck_require__(6928));
 const core_1 = __nccwpck_require__(5026);
 const shared_scanners_1 = __nccwpck_require__(7010);
 const PACK_VERSION = 'typescript_v1';
+let thresholds;
 async function scanTypeScript(options) {
     const findings = [];
     core.info('[ts] Running TypeScript/JavaScript language pack...');
+    thresholds = (0, core_1.loadThresholds)('typescript', options.workspacePath);
     if (options.categories.includes('code_structure')) {
         findings.push(...await runStructureChecks(options));
     }
@@ -36443,7 +36468,9 @@ async function runStructureChecks(options) {
     const lizardInstalled = await runCommand('pip', ['install', '--quiet', 'lizard'], { ignoreReturnCode: true });
     if (lizardInstalled.exitCode === 0) {
         await runCommand('lizard', [options.workspacePath, '--output-file', path.join(os.tmpdir(), 'lizard_ts_output.json'),
-            '--json', '-l', 'javascript', '--length', '50', '--CCN', '10'], { ignoreReturnCode: true });
+            '--json', '-l', 'javascript',
+            '--length', String(thresholds.code_structure.max_function_length),
+            '--CCN', String(thresholds.code_structure.max_cyclomatic_complexity)], { ignoreReturnCode: true });
         if (fs.existsSync(path.join(os.tmpdir(), 'lizard_ts_output.json'))) {
             try {
                 const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'lizard_ts_output.json'), 'utf-8'));
@@ -36457,9 +36484,12 @@ async function runStructureChecks(options) {
     // Custom AST-based checks via the sidecar script
     const astScriptPath = path.join((0, core_1.getActionRoot)(), 'language-packs/typescript/scripts/ast_checks.js');
     if (fs.existsSync(astScriptPath)) {
+        const thresholdsPath = path.join(os.tmpdir(), 'ts_thresholds.json');
+        fs.writeFileSync(thresholdsPath, JSON.stringify(thresholds));
         await runCommand('node', [astScriptPath, options.workspacePath,
             '--output', path.join(os.tmpdir(), 'ts_ast_findings.json'),
-            '--ignore', options.ignorePaths.join(',')], { ignoreReturnCode: true });
+            '--ignore', options.ignorePaths.join(','),
+            '--thresholds-json', thresholdsPath], { ignoreReturnCode: true });
         if (fs.existsSync(path.join(os.tmpdir(), 'ts_ast_findings.json'))) {
             try {
                 const data = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'ts_ast_findings.json'), 'utf-8'));
@@ -36475,45 +36505,46 @@ async function runStructureChecks(options) {
 function parseLizardOutput(data, workspacePath) {
     const findings = [];
     const now = new Date().toISOString();
+    const cs = thresholds.code_structure;
     for (const file of data?.function_list ?? []) {
         const relPath = path.relative(workspacePath, file.filename);
         const lang = inferLang(relPath);
-        if (file.length > 50) {
+        if (file.length > cs.max_function_length) {
             findings.push({
                 id: generateId(),
                 antipattern: 'long_method',
                 antipattern_name: 'Long Method',
                 category: 'code_structure',
-                severity: file.length > 150 ? 'high' : 'medium',
+                severity: file.length > cs.max_function_length * 3 ? 'high' : 'medium',
                 confidence: 0.95,
                 file: relPath,
                 line_start: file.start_line,
                 line_end: file.end_line,
                 language: lang,
                 language_pack: PACK_VERSION,
-                message: `Function '${file.name}' is ${file.length} lines long (threshold: 50)`,
+                message: `Function '${file.name}' is ${file.length} lines long (threshold: ${cs.max_function_length})`,
                 remediation: `Break '${file.name}' into smaller, single-responsibility functions. Consider extracting logical blocks into helper methods.`,
-                effort: file.length > 150 ? 'days' : 'hours',
+                effort: file.length > cs.max_function_length * 3 ? 'days' : 'hours',
                 tool: 'lizard',
                 rule_id: 'ts/long-method',
                 tags: ['maintainability'],
                 detected_at: now,
             });
         }
-        if (file.cyclomatic_complexity > 10) {
+        if (file.cyclomatic_complexity > cs.max_cyclomatic_complexity) {
             findings.push({
                 id: generateId(),
                 antipattern: 'high_cyclomatic_complexity',
                 antipattern_name: 'High Cyclomatic Complexity',
                 category: 'code_structure',
-                severity: file.cyclomatic_complexity > 20 ? 'high' : 'medium',
+                severity: file.cyclomatic_complexity > cs.max_cyclomatic_complexity * 2 ? 'high' : 'medium',
                 confidence: 1.0,
                 file: relPath,
                 line_start: file.start_line,
                 line_end: file.end_line,
                 language: lang,
                 language_pack: PACK_VERSION,
-                message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: 10)`,
+                message: `Function '${file.name}' has cyclomatic complexity of ${file.cyclomatic_complexity} (threshold: ${cs.max_cyclomatic_complexity})`,
                 remediation: `Reduce branching in '${file.name}' by extracting conditions into named predicates, using early returns, or applying the Strategy pattern.`,
                 effort: 'hours',
                 tool: 'lizard',
@@ -36530,18 +36561,20 @@ function parseLizardOutput(data, workspacePath) {
         fileGroups[fn.filename] = fileGroups[fn.filename] ?? [];
         fileGroups[fn.filename].push(fn);
     }
+    const godMethodCount = cs.god_class_method_count;
+    const godTotalLines = cs.god_class_total_lines;
     for (const [filename, fns] of Object.entries(fileGroups)) {
         const relPath = path.relative(workspacePath, filename);
         const lang = inferLang(relPath);
         const methodCount = fns.length;
         const totalLines = fns.reduce((acc, f) => acc + f.length, 0);
-        if (methodCount > 20 || totalLines > 500) {
+        if (methodCount > godMethodCount || totalLines > godTotalLines) {
             findings.push({
                 id: generateId(),
                 antipattern: 'god_class',
                 antipattern_name: 'God Class',
                 category: 'code_structure',
-                severity: methodCount > 40 ? 'high' : 'medium',
+                severity: methodCount > godMethodCount * 2 ? 'high' : 'medium',
                 confidence: 0.82,
                 file: relPath,
                 line_start: 1,
