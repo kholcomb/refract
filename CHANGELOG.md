@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+#### Security
+
+- **XSS in VS Code webview** — all Finding properties (`antipattern_name`, `effort`, `rule_id`, tags) are now HTML-escaped before injection into the summary panel. Replaced unsafe inline `onclick` handlers with `data-*` attribute delegation. `escHtml()` now also escapes single quotes.
+- **Insecure finding IDs** — replaced `Math.random()` with `crypto.randomUUID()` in all four `generateId()` functions (shared-scanners, python, typescript, go orchestrators).
+
+#### Bugs
+
+- **Hardcoded `python` code fence** — step summary code snippets now use `f.language` for correct syntax highlighting across Python, TypeScript, JavaScript, and Go.
+- **Unregistered command** — `antipattern.applyInteractiveFix` was referenced in code actions but never registered. Quick fix actions now correctly invoke `antipattern.showDiffPreview`.
+- **spawn() timeout didn't kill** — LSP server child processes used Node's `timeout` option on `spawn()`, which doesn't auto-kill. Replaced with manual SIGTERM/SIGKILL timer via shared `spawnWithTimeout()` helper.
+- **Diff preview memory leak** — content providers were disposed via 30-second `setTimeout`, leaking on rapid re-opens. Now tracked and disposed before each new diff.
+- **Temp file leak** — LSP server now cleans up `/tmp/antipattern_*.json` files after each scan via `finally` block.
+- **Path filtering** — `paths_ignore` used `startsWith()` which missed nested matches (e.g., `tests/` wouldn't filter `src/tests/foo.py`). Now supports both prefix and segment-based substring matching.
+- **Glob matching in LSP walkDir** — naive wildcard stripping caused false matches (`node_modules_custom` matched when ignoring `node_modules`). Now uses exact path segment matching.
+- **Confidence threshold validation** — input is now clamped to `[0.0, 1.0]` with NaN fallback to 0.7.
+
+#### Compatibility
+
+- **Windows runner support** — replaced all 15+ hardcoded `/tmp/` paths with `path.join(os.tmpdir(), ...)` across index.ts, shared-scanners.ts, and all three language pack orchestrators.
+
+#### Robustness
+
+- **JSON parse safety** — wrapped all sidecar output `JSON.parse()` calls in try-catch with `core.warning()` logging (python, typescript, go, gitleaks).
+- **Install failure logging** — `pip-audit` and `pytest-cov` install failures now log warnings instead of silently swallowing errors.
+
+#### Developer Experience
+
+- **VS Code typecheck** — added `paths` mapping for `@refract/core` in vscode tsconfig.json, resolving all pre-existing TS2307 module resolution errors. All three workspace packages now typecheck cleanly.
+- **YAML parser** — key regex now supports hyphenated keys (`max-nesting-depth` → `max_nesting_depth`). Removed `as any` cast in `mergeFromYaml`.
+- **Type safety** — replaced `as any` cast in `buildSummary` with `Partial<Record<AntipatternCategory, number>>`.
+
 ## [1.1.0] - 2026-03-24
 
 ### Added

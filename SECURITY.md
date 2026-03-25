@@ -31,13 +31,19 @@ Refract runs entirely within your CI runner or local machine. No code, findings,
 
 ### Tool execution model
 
-The action orchestrates third-party tools via `@actions/exec`, which uses `execFile()` with argument arrays internally. No shell interpretation occurs, eliminating command injection vectors.
+The action orchestrates third-party tools via `@actions/exec`, which uses `execFile()` with argument arrays internally. No shell interpretation occurs, eliminating command injection vectors. The VS Code extension's LSP server spawns sidecar processes with a hard 30-second timeout — processes that exceed it are sent SIGTERM followed by SIGKILL after 5 seconds.
+
+### Finding IDs
+
+Finding IDs are generated using `crypto.randomUUID()` to ensure uniqueness across parallel scan runs.
 
 | Tool | License | Purpose |
 | ---- | ------- | ------- |
 | lizard | MIT | Cyclomatic complexity |
 | gitleaks | MIT | Secret detection |
 | bandit | Apache 2.0 | Python security |
+| gosec | Apache 2.0 | Go security |
+| govulncheck | BSD-3-Clause | Go vulnerability scanning |
 | osv-scanner | Apache 2.0 | CVE scanning |
 | pip-audit | Apache 2.0 | Python dependency vulns |
 | npm audit | MIT (npm CLI) | Node dependency vulns |

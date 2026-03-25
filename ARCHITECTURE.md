@@ -163,6 +163,8 @@ Thresholds are loaded in three layers (later overrides earlier):
 2. **Language pack config** — `language-packs/<lang>/config/thresholds.yml`
 3. **Repo overrides** — `.antipattern-thresholds.yml` in the workspace root
 
+The YAML parser is a minimal subset parser (no `yaml` dependency) that handles flat key-value sections, numbers, booleans, and single-line arrays. Both underscored and hyphenated keys are accepted — hyphens are normalized to underscores automatically (e.g., `max-nesting-depth` becomes `max_nesting_depth`).
+
 The VS Code extension's `ciParity` setting reads the same threshold files so IDE diagnostics match what CI will catch.
 
 ## Language pack system
